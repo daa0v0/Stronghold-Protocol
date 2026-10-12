@@ -109,9 +109,9 @@ pack's files are the language folders' own (`/i18n/<code>.json`, `/data/i18n/<co
 |---|---|---|---|
 | `lang` | supported (0.2.0) | the client: UI strings, game texts | `public/js/ui/lang.js` (the menu, the strings: `shared/i18n.js`; the game texts: `public/js/data.js`) |
 | `assets` | supported (0.2.5-dev) | the client: art, models, audio, fonts | `public/js/ui/assetPacks.js` (the map) + `public/js/data.js` `onManifest` (applied to the loaded `data/assets.json`) |
-| `data` | planned | the server: data patches applied at start | — |
+| `data` | supported (0.2.5-dev) | the server: data patches applied at start (the client is served the patched tables) | `server/dataPacks.js` (the merge) + `server/data.js` (the tables) + `server/http/static.js` (`/data/<name>.json`) |
 
-A pack of a planned type is parsed and listed as not supported ("type "data" is planned …, not loaded by this
+A pack of a planned type is parsed and listed as not supported ("type "x" is planned …, not loaded by this
 version"); it is never served and never changes anything.
 
 ### The `assets` type
@@ -157,6 +157,45 @@ Rules the registry enforces, so a broken pack cannot half-apply:
 The client half is small on purpose: `ui/assetPacks.js` reads `/packs/index.json`, fetches the maps, merges them (later
 id wins) and rewrites the loaded manifest through the `data.js` transform hook. A pack dropped into `packs/` shows on
 the next page load — the same as a language pack — and the game's own art is used when the index or a map cannot be read.
+
+### The `data` type
+
+A data pack patches the game's **data tables** (`data/*.json`): new operators, items, bonds, stages, a balance tweak, or
+the data half of new art. It is a server-side type — the server merges the patches once at start and **serves the
+patched tables** at `/data/<name>.json`, so a browser reads exactly what the server simulates with. That agreement is
+the reason the type exists: the client must not be able to run different content than the server.
+
+```
+packs/my-pack/pack.json
+packs/my-pack/patch.json   { "assets": { … }, "skins": { … } }   — one patch file may patch several tables
+```
+
+```json
+{
+  "type": "data", "name": "我的内容包", "version": "1.0.0", "app": ">=0.2.4", "authors": ["…"],
+  "files": { "patch": ["patch.json"] }
+}
+```
+
+| Rule | Why |
+|---|---|
+| A patch file is `{ "<data file>": <merge patch> }`, and `<data file>` must be one of the game's tables (`config`, `chess`, `bonds`, `garrisons`, `items`, `bands`, `effects`, `choices`, `enemies`, `factions`, `waves`, `stages`, `bosses`, `tokens`, `assets`, `backups`) | a typo in a table name is a pack that silently does nothing |
+| Each value is a **JSON Merge Patch** (RFC 7386): objects merge recursively, scalars and arrays replace, `null` deletes a member | small patches that survive an upstream update, instead of a full table that freezes it |
+| Each value must be an object: a patch may not replace a table with a scalar, and may not delete one | one broken pack must not take the game down |
+| Two packs may patch the same table: their patches merge in pack order (the later id wins a member), and `tools/packs.mjs check` reports it | deterministic, and visible |
+| `live: false` — a pack added or edited while the server runs takes effect at the **next start** | the simulation's data is fixed for the life of the process (every player of a room must run one rule set) |
+| The file on disk is never written to: the merge happens on the loaded tables, which are deep-frozen, and only the patched tables are copied | an unpatched table is served byte for byte, and the install stays clean |
+
+A patch for a table the game does not have is ignored with a warning; a patch that would not leave a table behind is
+refused the same way. `server/dataPacks.js` exposes `mergePatch`, `collectDataPatches` and `applyDataPacks` (the tests
+use them directly), and `dataPackTag(result, hash)` gives a short digest of the applied set — the content hash the
+handshake will carry (see below).
+
+Client-side data (the half a pack *adds* so new art has something to point at) is patched this way too: `assets.json`
+carries the art manifest, so an art pack that adds an operator, a skin or an item ships a data pack for the manifest and
+an assets pack for the files.
+
+
 
 ### Code and gameplay mods (the owner's decision, 2026-10-12)
 

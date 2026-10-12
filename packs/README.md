@@ -63,3 +63,48 @@ and why. If everything is right and the art still does not change, check that th
 `data/assets.json` (a trailing `_2` or `_1` art-phase suffix matters).
 
 Details, the rules and the planned `data` type: [docs/PACKS.md](../docs/PACKS.md).
+
+## `data` — the game's data tables
+
+A data pack patches `data/*.json`: new operators, items, bonds, stages, a balance tweak, or the data half of new art. It
+applies **at server start** (the simulation's data is fixed for the life of the process), and the server then **serves
+the patched tables** at `/data/<name>.json`, so a browser reads exactly what the server simulates with.
+
+```
+packs/my-content/pack.json
+packs/my-content/patch.json
+```
+
+```json
+// pack.json
+{
+  "type": "data",
+  "name": "我的内容包",
+  "version": "1.0.0",
+  "app": ">=0.2.4",
+  "authors": ["your name"],
+  "files": { "patch": ["patch.json"] }
+}
+```
+
+```json
+// patch.json — one file may patch several tables
+{
+  "assets": { "chars": { "char_x": { "skins": { "char_x@my#1": { "name": "我的皮肤", "avatar": "/packs/my-art/img/a.png", "spine": { "front": { … } } } } } } },
+  "config": { "someTuning": 12 }
+}
+```
+
+- The keys must be the game's own table names: `config`, `chess`, `bonds`, `garrisons`, `items`, `bands`, `effects`,
+  `choices`, `enemies`, `factions`, `waves`, `stages`, `bosses`, `tokens`, `assets`, `backups`.
+- Each value is a **JSON Merge Patch** (RFC 7386): objects merge, scalars and arrays replace, `null` deletes a member.
+  So a patch stays small and survives a game update, where a copy of the whole table would freeze it.
+- A patch may not replace a table with a scalar, nor delete one: the pack is refused with the reason instead.
+- Two packs patching the same table merge in pack order (the pack whose id sorts later wins a member); the conflict is
+  reported by `node tools/packs.mjs check`.
+- **Restart the server** after adding or changing a data pack (unlike a language or assets pack, which a page reload
+  picks up). The start log names what was applied.
+- Adding art goes together with this type: the art manifest is `data/assets.json`, so an art pack that adds an operator,
+  a skin or an item ships a data pack for the manifest and an assets pack for the files (above).
+
+Details: [docs/PACKS.md](../docs/PACKS.md) §4.

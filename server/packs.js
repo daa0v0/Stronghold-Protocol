@@ -20,6 +20,7 @@ import path from 'node:path';
 import { APP_VERSION } from '../shared/constants.js';
 import { PACK_TYPES, PACK_MANIFEST, PACKS_URL, normalizeManifest, packIndexEntry, buildPackIndex } from '../shared/packs.js';
 import { SOURCE_LANG, isLangCode, countStrings } from '../shared/i18nPacks.js';
+import { DATA_FILES } from './data.js';
 
 /** The language folders' subdirectory (public/i18n/, data/i18n/). */
 export const LANG_DIR = 'i18n';
@@ -32,8 +33,9 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
  * @typedef {{ rel: string, abs: string, url: string }} PackFile
  * @typedef {{ id: string, type: string, layout: 'file' | 'folder', where: string, supported: boolean,
  *   manifest: import('../shared/packs.js').PackManifest, files: Record<string, PackFile[]>, strings?: number,
- *   overrides?: string[] }} Pack  files: role → its files (one entry for a plain role, a pool for a `many` role);
- *   overrides: the resource URLs an assets pack rewrites (`files.map`'s keys)
+ *   overrides?: string[], patches?: { file: string, patch: any }[] }} Pack  files: role → its files (one entry for a
+ *   plain role, a pool for a `many` role); overrides: the resource URLs an assets pack rewrites (`files.map`'s keys);
+ *   patches: the data patches a data pack declares (server/dataPacks.js applies them)
  * @typedef {{ where: string, problems: string[] }} Skipped
  */
 
@@ -166,6 +168,25 @@ export function scanPacks({ publicDir, dataDir, packsDir }, { app = APP_VERSION 
       if (problems.length) { skipped.push({ where, problems }); continue; }
       pack.overrides = overrides;
     }
+    if (manifest.type === 'data') {
+      // each patch file is `{ "<data file>": <merge patch> }`: a known table, and an object for each (a patch may not
+      // replace a table with a scalar, nor delete it — that is what keeps a broken pack from taking the game down)
+      const problems = [];
+      /** @type {{ file: string, patch: any }[]} */
+      const patches = [];
+      for (const f of files.patch) {
+        const r = readJson(f.abs);
+        if (r.error) { problems.push(`files.patch: ${f.rel}: ${r.error}`); continue; }
+        if (!isObj(r.json)) { problems.push(`files.patch: ${f.rel}: not a JSON object of data file → patch`); continue; }
+        for (const [file, patch] of Object.entries(r.json)) {
+          if (!DATA_FILES.includes(file)) { problems.push(`files.patch: ${f.rel}: "${file}" is not a data file (${DATA_FILES.join(', ')})`); continue; }
+          if (!isObj(patch)) { problems.push(`files.patch: ${f.rel}: "${file}" must map to an object (a merge patch), not ${patch === null ? 'null' : Array.isArray(patch) ? 'a list' : typeof patch}`); continue; }
+          patches.push({ file, patch });
+        }
+      }
+      if (problems.length) { skipped.push({ where, problems }); continue; }
+      pack.patches = patches;
+    }
     found.push(pack);
   }
 
@@ -210,7 +231,7 @@ export function packIndexOf(packs, { app = APP_VERSION } = {}) {
       if (kind?.files?.[role]?.pool) continue; // a pool's files are served but never listed: the map points at them
       files[role] = list.length === 1 ? list[0].url : list.map((f) => f.url);
     }
-    return packIndexEntry(p.manifest, { files, strings: p.strings, overrides: p.overrides?.length });
+    return packIndexEntry(p.manifest, { files, strings: p.strings, overrides: p.overrides?.length, patches: p.patches?.length });
   });
   return buildPackIndex(entries, { app });
 }

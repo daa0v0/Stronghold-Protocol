@@ -61,7 +61,7 @@ function exampleRoot() {
   put(dir, 'packs/qab/ui.json', { 开始: 'Qab-Start', 设置: 'Qab-Settings' });
   put(dir, 'packs/qab/texts/game.json', { version: 1, lang: 'qab', names: { 阿米娅: 'Qab-Amiya' }, files: {} });
   put(dir, 'packs/qab/notes.html', '<script>alert(1)</script>');
-  put(dir, 'packs/art/pack.json', { type: 'data', name: 'HD patch' });
+  put(dir, 'packs/art/pack.json', { type: 'soon', name: 'HD patch' });
   put(dir, 'packs/dup/pack.json', { type: 'lang', lang: 'qaa', files: { ui: 'ui.json' } });
   put(dir, 'packs/dup/ui.json', { 开始: 'dup' });
   put(dir, 'packs/broken/pack.json', { type: 'lang', files: { ui: '../escape.json' } });
@@ -79,7 +79,7 @@ test('discovery: single-file language packs and folder packs, one registry; brok
     assert.match(why['public/i18n/zh.json'], /source language/);
     assert.match(why['public/i18n/QAC.json'], /not a language code in its usual case/);
     assert.match(why['public/i18n/qad.json'], /not valid JSON/);
-    assert.match(why['packs/art/'], /type "data" is planned/);
+    assert.match(why['packs/art/'], /unknown type "soon"/);
     assert.match(why['packs/dup/'], /language qaa is already provided by public\/i18n\/qaa\.json/);
     assert.match(why['packs/broken/'], /no "lang".*"files\.ui": "\.\.\/escape\.json" is not a path inside the pack folder/);
     assert.match(why['packs/nomanifest/'], /no pack\.json/);
@@ -151,7 +151,7 @@ test('the server: GET /packs/index.json lists the packs live, GET /packs/<id>/<f
 });
 
 test('manifest: common fields, type fields, app ranges; English is a pack like any other', () => {
-  assert.deepEqual(Object.entries(PACK_TYPES).map(([k, v]) => [k, v.status]), [['lang', 'supported'], ['assets', 'supported'], ['data', 'planned']]);
+  assert.deepEqual(Object.entries(PACK_TYPES).map(([k, v]) => [k, v.status]), [['lang', 'supported'], ['assets', 'supported'], ['data', 'supported']]);
   for (const [range, v, ok] of [['>=0.2.0', '0.2.0-dev', true], ['>=0.2.0', '0.1.4', false], ['0.2.x', '0.2.7', true], ['0.2.x', '0.3.0', false],
     ['^0.2.1', '0.2.9', true], ['^0.2.1', '0.3.0', false], ['^1.2.0', '1.9.0', true], ['~0.2.1', '0.2.0', false], ['>=0.2.0 <0.3.0', '0.2.5', true],
     ['>=0.2.0 <0.3.0', '0.3.0', false], ['0.1.x || 0.2.x', '0.2.0', true], ['*', '9.9.9', true], ['', '0.0.1', true], ['0.2.0', '0.2.1', false]]) {

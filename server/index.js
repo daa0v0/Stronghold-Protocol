@@ -23,7 +23,9 @@
 // The server only auto-listens when this file is the process entry point.
 
 import http from 'node:http';
-import { getData, loadData } from './data.js';
+import { DATA_FILES, getData, loadData } from './data.js';
+import { applyDataPacks, dataPackTag } from './dataPacks.js';
+import { createHash } from 'node:crypto';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
@@ -82,17 +84,24 @@ export async function startServer(opts = {}) {
   const log = adminSecret.secret ? withLogRing(baseLog, logRing) : baseLog;
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
 
+  // content packs (docs/PACKS.md): scanned first — the start log names them, and a "data" pack's patches belong to the
+  // tables the match and the simulation run on (and to the same tables /data/<name>.json serves) — and again whenever
+  // their folders change.
+  const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
+  packs.refresh(true);
+
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
-  const data = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
+  const baseData = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
+  const dataPacks = applyDataPacks(baseData, packs.list('data'), { log, known: DATA_FILES });
+  const data = dataPacks.tables;
+  const dataPackTagValue = dataPackTag(dataPacks, (t) => createHash('sha256').update(t).digest('hex'));
   const serverSettings = createServerSettings({ dir: opts.serverSettingsDir, root: ROOT, log,
     onChange: (next) => applySettings(next) });
   const { registry, lobby, network } = createSessionStack(opts, { data, log });
   const announcements = createAnnouncementStore({ dir: opts.announcementsDir, root: ROOT, log });
   const announcementNotices = createAnnouncementNoticeMonitor({ store: announcements, network, log });
-  // content packs (docs/PACKS.md): scanned now — the start log names them — and again whenever their folders change
-  const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
-  packs.refresh(true);
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, packsDir, packs, runtimeCache: opts.runtimeCache, log });
+  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, packsDir, packs,
+    dataTables: dataPacks.overrides.size ? dataPacks.overrides : null, runtimeCache: opts.runtimeCache, log });
   // A persisted owner limit overrides the programmatic/env fallback. A null setting means the
   // default unlimited limiter, while keeping tests and embedders' explicit opts usable.
   const fallbackAssetCacheLimits = opts.assetCacheLimits;
@@ -221,7 +230,7 @@ export async function startServer(opts = {}) {
   }
 
   return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, announcements, serverSettings,
-    bandwidthEmergency, admin: adminService, close };
+    bandwidthEmergency, admin: adminService, dataPacks: { applied: dataPacks.applied, tag: dataPackTagValue, overrides: dataPacks.overrides }, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

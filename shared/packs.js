@@ -14,7 +14,7 @@
 // Manifest (pack.json, or `_meta` of a single-file language pack; every field but type / lang optional):
 //   id            a folder pack: its folder name; a single-file language pack: its language code (a manifest that names
 //                 another id is reported; the place decides). Letters, digits, '.', '_', '-', ≤ 64; unique across types
-//   type          "lang", "assets"; planned: "data"
+//   type          "lang", "assets", "data"
 //   version       the pack's own version (e.g. "1.2.0")
 //   app           the app versions it is made for, a range: ">=0.2.0", ">=0.2.0 <0.3.0", "0.2.x", "^0.2.0", "~0.2.1", "*"
 //                 (a pre-release such as 0.2.0-dev counts as its release). Outside it a language pack still loads —
@@ -84,7 +84,15 @@ export const PACK_TYPES = Object.freeze({
       media: Object.freeze({ required: true, many: true, pool: true, ext: ASSET_EXTENSIONS }),
     }),
   }),
-  data: Object.freeze({ status: 'planned', summary: 'data patches the server applies at start' }),
+  data: Object.freeze({
+    status: 'supported', live: false,
+    summary: 'data patches the server applies at start; the client is served the patched tables',
+    files: Object.freeze({
+      // one or more `{ "<data file>": <merge patch> }` files (docs/PACKS.md §4): the server merges them into the tables
+      // it loaded and serves the PATCHED tables at /data/<name>.json, so a browser reads what the server simulates with
+      patch: Object.freeze({ required: true, many: true, ext: ['.json'] }),
+    }),
+  }),
 });
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -247,7 +255,7 @@ export function normalizeManifest(raw, ctx) {
  * A role marked `pool` (an assets pack's media) stays out: the client never needs those URLs — the map holds them — and
  * listing every file of a big pack would only bloat an index every visitor fetches.
  * @param {PackManifest} manifest
- * @param {{ files: Record<string, string | string[]>, strings?: number, overrides?: number }} extra files: role → URL
+ * @param {{ files: Record<string, string | string[]>, strings?: number, overrides?: number, patches?: number }} extra files: role → URL
  */
 export function packIndexEntry(manifest, extra) {
   /** @type {Record<string, unknown>} */
@@ -268,6 +276,7 @@ export function packIndexEntry(manifest, extra) {
     e.strings = extra.strings ?? 0;
   }
   if (manifest.type === 'assets' && Number.isFinite(extra.overrides)) e.overrides = extra.overrides;
+  if (manifest.type === 'data' && Number.isFinite(extra.patches)) e.patches = extra.patches;
   e.files = { ...extra.files };
   return e;
 }
@@ -306,6 +315,8 @@ export function readPackIndex(json, type) {
     if (e.type === 'lang' && (!isLangCode(e.lang) || e.lang === SOURCE_LANG || !files.ui)) continue;
     // an assets pack without its map does nothing: refuse it here rather than fetch nothing (the lang type's `ui` alike)
     if (e.type === 'assets' && !files.map) continue;
+    // a data pack without its patch file does nothing either
+    if (e.type === 'data' && !files.patch) continue;
     out.push({ ...e, files });
   }
   return out;

@@ -53,11 +53,14 @@ const EMPTY_LOCAL_ART = Buffer.from(JSON.stringify({ version: 1, source: 'none',
 /**
  * Create the static request handler.
  * @param {{ publicDir: string, dataDir: string, sharedDir: string, simDir?: string, packsDir?: string,
- *   packs?: ReturnType<typeof createPackRegistry>, runtimeCache?: boolean, log?: object }} dirs
+ *   packs?: ReturnType<typeof createPackRegistry>, dataTables?: Map<string, any> | null, runtimeCache?: boolean,
+ *   log?: object }} dirs
  *   packs: the server's pack registry (default: one over publicDir, dataDir and packsDir — ROOT/packs)
+ *   dataTables: tables a data pack patched (server/dataPacks.js): /data/<name>.json is served from them, so a browser
+ *   reads what the server simulates with
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, rawPath: string, query: string) => Promise<void>}
  */
-export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), packs = null, runtimeCache, log = noopLog }) {
+export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = path.join(ROOT, 'server', 'sim'), packsDir = path.join(ROOT, 'packs'), packs = null, dataTables = null, runtimeCache, log = noopLog }) {
   const registry = packs || createPackRegistry({ publicDir, dataDir, packsDir }, { log: /** @type {any} */ (log) });
   const mounts = [
     { prefix: '/data/', name: 'data', dir: path.resolve(dataDir) },
@@ -113,6 +116,17 @@ export function createStaticHandler({ publicDir, dataDir, sharedDir, simDir = pa
       || (mount.deny && mount.deny.has(segments[segments.length - 1].toLowerCase())))) {
       sendError(req, res, 404, '页面不存在 · Not found');
       return;
+    }
+    // Content packs, type "data" (docs/PACKS.md §4): a patched table is served instead of the file on disk, so the
+    // client reads exactly what the server simulates with. A pack that patched nothing leaves every byte as it was.
+    if (dataTables && mount.name === 'data' && segments.length === 1 && segments[0].toLowerCase().endsWith('.json')) {
+      const table = dataTables.get(segments[0].slice(0, -'.json'.length));
+      if (table) {
+        const body = Buffer.from(JSON.stringify(table));
+        const tag = `dp-${createHash('sha256').update(body).digest('hex').slice(0, 16)}`;
+        await serveBuffer(req, res, body, { type: MIME['.json'], tag, cacheControl: 'no-cache', cache: gzipCache });
+        return;
+      }
     }
     let absPath = path.join(mount.dir, ...segments);
     if (absPath !== mount.dir && !absPath.startsWith(mount.dir + path.sep)) { sendError(req, res, 403, '禁止访问 · Forbidden'); return; }
