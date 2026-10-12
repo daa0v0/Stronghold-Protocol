@@ -5,7 +5,9 @@ server lists every pack it finds at `/packs/index.json` and picks up a new or ch
 restart, no build step. `node tools/packs.mjs list` shows what was found, what was skipped and why; `check --strict`
 exits non-zero on a problem.
 
-Two types load in this version: **`lang`** (a language) and **`assets`** (art, models, audio, fonts).
+Three types load in this version: **`lang`** (a language), **`assets`** (art, models, audio, fonts) and **`data`** (the
+game's data tables). A real one ships with the repository — **`packs/stronghold-skins/`**, the 干员皮肤 content
+([docs/SKINS.md](../docs/SKINS.md) §2) — so you can read a working pack instead of only a sketch.
 
 ## `lang` — a language
 
@@ -62,13 +64,17 @@ Reload the page after adding or changing a pack. The server log and `node tools/
 and why. If everything is right and the art still does not change, check that the URL in your map is exactly the one in
 `data/assets.json` (a trailing `_2` or `_1` art-phase suffix matters).
 
-Details, the rules and the planned `data` type: [docs/PACKS.md](../docs/PACKS.md).
+Details and the rules: [docs/PACKS.md](../docs/PACKS.md).
 
 ## `data` — the game's data tables
 
 A data pack patches `data/*.json`: new operators, items, bonds, stages, a balance tweak, or the data half of new art. It
 applies **at server start** (the simulation's data is fixed for the life of the process), and the server then **serves
 the patched tables** at `/data/<name>.json`, so a browser reads exactly what the server simulates with.
+
+The shipped example is the skins pack: its `patch.json` adds `chars[<charId>].skins` to `assets.json` and the catalogue to
+`skins.json`, while the art itself stays in `public/assets/` — a pack carries **paths**, so content whose files are not in
+git can still be a pack.
 
 ```
 packs/my-content/pack.json

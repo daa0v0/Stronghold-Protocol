@@ -13,12 +13,19 @@
 
 ## 2. 数据
 
+**内容住在数据包里，功能住在代码里**（docs/PACKS.md §4）：皮肤的内容是 `packs/stronghold-skins/`，一个 `data` 包，它按合并补丁叠加在基表上；`ui/skins.js`、`ui/skinPicker.js`、战斗/渲染管线与 `room.skins` 是功能，仍留在代码里。美术照旧在 `public/assets/`（不入 git），**包里只有路径**。
+
 两份数据分工明确，这个分工是「按需安装」的关键：
 
-| 文件 | 内容 | 说明 |
+| 位置 | 内容 | 说明 |
 |---|---|---|
-| `data/skins.json` | **目录**：`{ version, counts, chars: { <charId>: [{ id, name, group }] } }` | 本项目知道的**全部**皮肤。不含 URL——没安装的皮肤没有文件可指。当前 172 名干员 / **271 款**。 |
-| `data/assets.json` → `chars[charId].skins[skinId]` | **已安装**：`{ name, group, avatar, spine? }` | 本服务器**真的有素材**的皮肤。有 `spine` 的才换战场模型；没有的只换头像。当前 271 款全部已安装，其中 **172 款带 Spine 模型，99 款只有头像**。 |
+| `packs/stronghold-skins/patch.json` → `skins` | **目录**：`{ version, counts, chars: { <charId>: [{ id, name, group }] } }` | 本项目知道的**全部**皮肤。不含 URL——没安装的皮肤没有文件可指。当前 172 名干员 / **271 款**。 |
+| `packs/stronghold-skins/patch.json` → `assets.chars[charId].skins[skinId]` | **已安装**：`{ name, group, avatar, spine? }` | 本服务器**真的有素材**的皮肤。有 `spine` 的才换战场模型；没有的只换头像。当前 271 款全部已安装，其中 **172 款带 Spine 模型，99 款只有头像**。 |
+| `data/skins.json`、`data/assets.json` | **基表**：空目录（`counts` 全 0）与不含 `skins` 块的清单 | `npm run build-data` 产出的就是干净版本；包关掉时服务器下发的就是它——**没有包就没有皮肤**，这是刻意的。 |
+
+服务器装载这个包（放进 `packs/` 即自动加载，无需配置），所以玩家看到的与迁包之前完全一样：`/data/skins.json` 与 `/data/assets.json` 都由服务器下发**打过补丁**的表（`server/http/static.js` 的 `dataTables`），客户端照旧用 `data.get('skins')` / `data.get('assets')` 读——客户端一行都不用改。服主在 `/admin → 内容包` 可以停用它，或用 `packs.off` 关掉。
+
+内容仍然**只由工具生成**（AGENTS.md 的生成数据规则）：`node tools/skins-pack.mjs --migrate` 负责把基表里的内容搬进包，`--from=<源 assets.json>` 负责把新素材的清单合并进包（并补目录行），`--check` 在基表又变脏时报错。
 
 皮肤 id 形如 `char_1014_nearl2@epoque#17`；**文件名**把它规范化成 `char_1014_nearl2_epoque_17`（`@`/`#` → `_`）。注意皮肤 id 含 `@` 和 `#`，所以不能用 `isId` 校验（`shared/protocol.js isSkinId`）。
 
@@ -83,18 +90,21 @@ room.skins { skins }      C2S：skins = { [baseChessId]: skinId }
 
 **新增文件**
 ```
-data/skins.json
+packs/stronghold-skins/pack.json                          数据包清单（type: data）
+packs/stronghold-skins/patch.json                         皮肤内容：目录 + 已安装清单（由 tools/skins-pack.mjs 生成）
 public/assets/char/skin_avatar/**                        (271 个)
 public/assets/spine/op/<charId>/<skinDir>/**             (172 个目录 / 1023 个文件)
 public/js/ui/skins.js
 public/js/ui/skinPicker.js
 docs/SKINS.md                                            (本文件)
-tools/skins-inject.mjs                                   (把皮肤数据注入 data/assets.json 的生成步骤)
+tools/skins-pack.mjs                                     (把皮肤内容搬进/合并进包的生成步骤)
 ```
 
-**改动文件**（共 21 个代码/样式文件 + data/assets.json）
+**改动文件**（共 21 个代码/样式文件 + 基表）
 ```
-data/assets.json                       注入 172 名干员的 271 条 skins（+433 KB，由 tools/skins-inject.mjs 生成）
+data/assets.json                       不再含 skins 块（内容搬进 packs/stronghold-skins/）
+data/skins.json                        空目录（同上；基表由 npm run build-data 产出）
+server/data.js                         DATA_FILES 加 'skins'：让包能补丁 /data/skins.json（客户端要读的表）
 shared/protocol.js                     SKIN_LIMITS / isSkinId / isSkinSelection + C2S['room.skins']
 server/net.js                          Session.skins + HEAVY_TYPES 加 'room.skins'
 server/lobby.js                        freezeSkins() + skins() + 分发 + 座位/welcome 字段

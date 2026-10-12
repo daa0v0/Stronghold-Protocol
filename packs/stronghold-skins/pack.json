@@ -1,0 +1,14 @@
+{
+  "type": "data",
+  "name": "干员皮肤",
+  "englishName": "Operator skins",
+  "version": "1.0.0",
+  "app": ">=0.2.4",
+  "authors": [
+    "Stronghold Protocol"
+  ],
+  "description": "全部干员皮肤：data/skins.json 的目录与 data/assets.json 的已安装清单（美术仍在 public/assets/，见 docs/SKINS.md）",
+  "files": {
+    "patch": "patch.json"
+  }
+}

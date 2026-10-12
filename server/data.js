@@ -23,10 +23,17 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 /** Default data directory. */
 export const DATA_DIR = path.join(ROOT, 'data');
 
-/** Files the game expects (a warning lists the missing ones). */
+/**
+ * Files the game expects (a warning lists the missing ones).
+ *
+ * `skins` is the 干员皮肤 catalogue: a table the CLIENT fetches (`public/js/data.js` DATA_FILES) that the simulation never
+ * reads. It is listed here because this list is also what a content pack may patch (`server/dataPacks.js` `known`) and
+ * what the static handler serves patched — the skins content lives in a data pack now (docs/SKINS.md,
+ * `packs/stronghold-skins/`), so `/data/skins.json` has to be patchable and servable like any other table.
+ */
 export const DATA_FILES = Object.freeze([
   'config', 'chess', 'bonds', 'garrisons', 'items', 'bands', 'effects', 'choices',
-  'enemies', 'factions', 'waves', 'stages', 'bosses', 'tokens', 'assets', 'backups',
+  'enemies', 'factions', 'waves', 'stages', 'bosses', 'tokens', 'assets', 'backups', 'skins',
 ]);
 
 /**

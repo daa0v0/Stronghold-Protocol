@@ -8,10 +8,11 @@
 // so nothing distinguished a skin that changes the battlefield from one that cannot. These tests pin both halves.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { buildBattleSpec, createBattleFromSpec, sanitizeUnitLoadout } from '../server/sim/spec.js';
+import { loadData, DATA_FILES } from '../server/data.js';
+import { createPackRegistry } from '../server/packs.js';
+import { applyDataPacks } from '../server/dataPacks.js';
+import { serveDirs } from '../server/http/config.js';
 import { GEO } from '../shared/constants.js';
 import { spineEntry } from '../public/js/assets.js';
 import { renderInfo } from '../public/js/render/app/info.js';
@@ -19,11 +20,16 @@ import { data } from '../public/js/data.js';
 import { availableSkins, hasBattleModel } from '../public/js/ui/skins.js';
 import { makeMatch, give, legalTileFor, DATA } from './match/harness.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const readJson = (rel) => JSON.parse(readFileSync(path.join(ROOT, rel), 'utf8'));
-const assets = readJson('data/assets.json');
-const catalogue = readJson('data/skins.json');
-const chessData = readJson('data/chess.json');
+// The skins' CONTENT is a data pack now (packs/stronghold-skins/, docs/SKINS.md): the base tables carry no skins, and the
+// server applies the shipped packs at boot. So this test reads what the server really serves — base data with the packs
+// applied — which also means it fails if the pack were dropped, instead of quietly testing an empty catalogue.
+const DIRS = serveDirs({});
+const silent = { info() {}, warn() {}, error() {} };
+const packs = createPackRegistry(DIRS, { log: silent });
+const applied = applyDataPacks(loadData(DIRS.dataDir, { log: silent }), packs.list('data'), { log: silent, known: DATA_FILES });
+const assets = applied.tables.assets;
+const catalogue = applied.tables.skins;
+const chessData = applied.tables.chess;
 
 /** A chess, its operator, and one of that operator's skins that HAS its own battle model. */
 function modelledPick() {
@@ -128,12 +134,13 @@ test('an avatar-only skin keeps the operator’s model in battle (that is the do
 });
 
 test('the picker marks exactly the skins that cannot change the battlefield', async () => {
-  // Load the real manifests into the client data store the way the browser does, with a fetch that reads from disk.
+  // Load the manifests into the client data store the way the browser does — over HTTP, from what the server serves.
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
-    const name = String(url).split('/').pop();
-    const text = readFileSync(path.join(ROOT, 'data', name), 'utf8');
-    return { ok: true, status: 200, json: async () => JSON.parse(text) };
+    const name = String(url).split('/').pop().replace(/\.json$/, '');
+    const table = applied.tables[name];
+    if (!table) return { ok: false, status: 404, json: async () => null };
+    return { ok: true, status: 200, json: async () => table };
   };
   try {
     await data.load('skins');

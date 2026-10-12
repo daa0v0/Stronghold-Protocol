@@ -1,6 +1,6 @@
 # DATA.md — generated game data (`data/*.json`)
 
-All files in `data/` except `data/assets.json` and `data/i18n/` are produced by **`node tools/build-data.mjs`** (task F1) from the
+All files in `data/` except `data/assets.json`, `data/skins.json` and `data/i18n/` are produced by **`node tools/build-data.mjs`** (task F1) from the
 official zh_CN client data ([Kengxxiao/ArknightsGameData](https://github.com/Kengxxiao/ArknightsGameData)) joined
 with `docs/research/*.json`. Do not edit them by hand — change the build script and rebuild.
 `data/i18n/en.json` (the official English texts of these files by record id and field) is written by
@@ -8,6 +8,10 @@ with `docs/research/*.json`. Do not edit them by hand — change the build scrip
 fails while it is stale).
 `data/assets.json` is written by `tools/fetch-assets.mjs`, which keeps the current file rather than drop entries whose
 downloads failed on this machine unless `--allow-shrink` (or `--prune`) is passed (docs/ASSETS.md, DESIGN §21.25).
+`data/skins.json` is the 干员皮肤 catalogue, and the skins' CONTENT lives in the data pack `packs/stronghold-skins/`
+(docs/SKINS.md §2): `tools/skins-pack.mjs` moves content into that pack (`--migrate`) or merges a source manifest into it
+(`--from=`), and leaves the base tables clean — a file without skins and an empty catalogue — so the pack is what a server
+serves. `node tools/skins-pack.mjs --check` fails if the base tables carry skin content again.
 
 ```
 node tools/build-data.mjs              # build (downloads missing official files into .cache/gamedata/)

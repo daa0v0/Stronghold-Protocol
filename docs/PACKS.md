@@ -177,9 +177,17 @@ packs/my-pack/patch.json   { "assets": { … }, "skins": { … } }   — one pat
 }
 ```
 
+**A real one ships with the repository**: `packs/stronghold-skins/` carries the 干员皮肤 content — the manifest blocks of
+`assets` (`chars[<charId>].skins`) and the catalogue of `skins` — which used to live in `data/*.json` and now merges over
+those (now empty) base tables at start; the art it points at stays in `public/assets/` and is not in git
+(`docs/SKINS.md` §2, `test/skins-pack.test.js`). It is also the reason `skins` is a table here: the catalogue is a
+client-fetched table, so a pack must be able to patch it and the server must be able to serve it patched. Two things it
+shows: a pack may hold **paths** to files that are not in git, and switching it off in `/admin → 内容包` really removes what
+it carries.
+
 | Rule | Why |
 |---|---|
-| A patch file is `{ "<data file>": <merge patch> }`, and `<data file>` must be one of the game's tables (`config`, `chess`, `bonds`, `garrisons`, `items`, `bands`, `effects`, `choices`, `enemies`, `factions`, `waves`, `stages`, `bosses`, `tokens`, `assets`, `backups`) | a typo in a table name is a pack that silently does nothing |
+| A patch file is `{ "<data file>": <merge patch> }`, and `<data file>` must be one of the game's tables (`config`, `chess`, `bonds`, `garrisons`, `items`, `bands`, `effects`, `choices`, `enemies`, `factions`, `waves`, `stages`, `bosses`, `tokens`, `assets`, `backups`, `skins`) | a typo in a table name is a pack that silently does nothing |
 | Each value is a **JSON Merge Patch** (RFC 7386): objects merge recursively, scalars and arrays replace, `null` deletes a member | small patches that survive an upstream update, instead of a full table that freezes it |
 | Each value must be an object: a patch may not replace a table with a scalar, and may not delete one | one broken pack must not take the game down |
 | Two packs may patch the same table: their patches merge in pack order (the later id wins a member), and `tools/packs.mjs check` reports it | deterministic, and visible |
