@@ -25,6 +25,7 @@ import { detectFeatures } from './device.js';
 import { LangToggle, machineTranslationNote } from './lang.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { errorCount, currentBattle, diagnosticsText } from '../diag.js';
+import { contentState } from './contentPacks.js';
 import { copyText } from './clipboard.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
@@ -208,8 +209,9 @@ function DiagSection() {
   }, [manual]);
   const n = errorCount();
   const battle = currentBattle();
+  const cp = contentState(); // content packs of the server (ui/contentPacks.js): the 已加载 mod mark of this page
   const copy = async () => {
-    const text = diagnosticsText({ state: store.get(), settings: settingsStore.get(), attachBattle: attach && !!battle });
+    const text = diagnosticsText({ state: store.get(), settings: settingsStore.get(), attachBattle: attach && !!battle, packs: cp });
     const ok = await copyText(text);
     setManual(ok ? null : text);
     setNote(ok ? 'copied' : 'refused');
@@ -222,7 +224,8 @@ function DiagSection() {
     <p class="set-hint">${t('遇到问题时，复制诊断信息并粘贴到 GitHub issue 中，开发者就能看到出错时的情况。诊断信息只在本机生成，不会自动上传；玩家名和房间号会被替换。')}</p>
     <div class="set-diag__meta">
       <span class="set-diag__stat">${t('已记录的错误')}<b class=${cx('set-diag__count num', n > 0 && 'is-warn')} data-testid="diag-count">${n}</b></span>
-      <span class="set-diag__url">${ISSUES_URL.replace(/^https:\/\//, '')}</span>
+      ${cp.packs.length ? html`<span class="set-diag__stat">${t('已加载内容包')}<b class="set-diag__count num" data-testid="diag-mods">${cp.packs.length}</b></span>` : null}
+      ${cp.mismatch ? html`<span class="set-diag__stat is-warn" data-testid="diag-mods-stale">${t('内容包与服务器不一致，请刷新页面')}</span>` : null}      <span class="set-diag__url">${ISSUES_URL.replace(/^https:\/\//, '')}</span>
     </div>
     ${battle ? html`<${Toggle} label=${t('附上本场战斗')} micro="BATTLE DATA" value=${attach} onChange=${setAttach} />
       <p class="set-hint set-diag__battle-hint">${t('开发者可以用附上的战斗数据重现这场战斗。')}</p>` : null}

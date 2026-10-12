@@ -201,6 +201,15 @@ export function buildDiagnostics(input) {
     room?.difficulty ? `difficulty ${room.difficulty}` : null,
     Array.isArray(pub?.players) ? `players ${pub.players.length}` : Array.isArray(room?.seats) ? `seats ${room.seats.filter(Boolean).length}` : null)}`);
   const b = state.match?.battle || null;
+  // content packs (docs/PACKS.md §4): what this server runs and whether this page still matches it (ui/contentPacks.js).
+  // A report from a modded server should say so, and a stale page shows up here as the two tags disagreeing.
+  const cp = input.packs || null;
+  const cpList = (cp?.packs || []).map((p) => `${p.type}:${p.id}${p.version ? `@${p.version}` : ''}`).join(', ');
+  const cpStale = !!(cp?.serverTag && cp?.tag && cp.serverTag !== cp.tag);
+  if (cp && (cpList || cpStale)) {
+    lines.push(`content: ${join(`tag ${cp.tag || '?'}`, cpStale ? `SERVER ${cp.serverTag} — this page is out of date, reload`
+      : cp.serverTag ? 'page matches the server' : null, cpList || null)}`);
+  }
   if (b) {
     lines.push(`battle: ${join(b.kind, b.fieldId ? `field ${b.fieldId}` : null, b.authoritative ? 'authoritative' : b.watch ? 'watching' : null,
       b.done ? 'done' : b.loading ? 'loading' : 'running', b.paused ? 'paused' : null, Number.isFinite(b.speed) ? `${b.speed}x` : null)}`);
@@ -261,9 +270,10 @@ export function browserEnv() {
 
 /**
  * The report of this page: the given store state and settings, this browser, the log and, with `attachBattle`, the
- * battle on screen.
- * @param {{ state: any, settings?: any, attachBattle?: boolean }} opts
+ * battle on screen. `packs` (ui/contentPacks.js `contentState()`) adds the content packs of the server and whether this
+ * page still matches them.
+ * @param {{ state: any, settings?: any, attachBattle?: boolean, packs?: any }} opts
  */
-export function diagnosticsText({ state, settings = null, attachBattle = false }) {
-  return buildDiagnostics({ state, settings, env: browserEnv(), battle: attachBattle ? currentBattle() : null });
+export function diagnosticsText({ state, settings = null, attachBattle = false, packs = null }) {
+  return buildDiagnostics({ state, settings, env: browserEnv(), battle: attachBattle ? currentBattle() : null, packs });
 }

@@ -54,9 +54,12 @@ export const PACKS_URL = '/packs/';
  * @typedef {{ required?: boolean, ext: readonly string[], many?: boolean, pool?: boolean }} FileRole a role of a folder pack's
  *   `files`: `many` takes a list of paths (a file pool), `pool` keeps those files out of the index (the pack points at
  *   them itself, so listing every one would only bloat the index)
- * @typedef {{ status: 'supported' | 'planned', summary: string, live?: boolean, files?: Record<string, FileRole> }} PackType
- *   live: a server picks up its changes without a restart (lang: the client loads packs on demand; data will not —
- *   the simulation's data is fixed at start). files: the roles a folder pack of the type names, with the extensions a
+ * @typedef {{ status: 'supported' | 'planned', summary: string, live?: boolean, identity?: boolean,
+ *   files?: Record<string, FileRole> }} PackType
+ *   live: a server picks up its changes without a restart (lang and assets: the client loads packs on demand; data will
+ *   not — the simulation's data is fixed at start). identity: the type belongs to a server's content identity
+ *   (shared/contentTag.js), i.e. it changes what the game is — a language pack is not, it only changes text a client
+ *   opts into, so it stays out of the tag. files: the roles a folder pack of the type names, with the extensions a
  *   server may serve for them (nothing else in a pack folder is ever served)
  */
 
@@ -71,11 +74,11 @@ export const ASSET_EXTENSIONS = Object.freeze([
 /** @type {Readonly<Record<string, PackType>>} the pack types (docs/PACKS.md "Adding a pack type") */
 export const PACK_TYPES = Object.freeze({
   lang: Object.freeze({
-    status: 'supported', live: true, summary: 'a language: UI strings and, optionally, game texts',
+    status: 'supported', live: true, identity: false, summary: 'a language: UI strings and, optionally, game texts',
     files: Object.freeze({ ui: Object.freeze({ required: true, ext: ['.json'] }), data: Object.freeze({ ext: ['.json'] }) }),
   }),
   assets: Object.freeze({
-    status: 'supported', live: true,
+    status: 'supported', live: true, identity: true,
     summary: 'art, audio and font replacements (client side): a URL map plus the file pool it points at',
     files: Object.freeze({
       // { "<resource URL of this server>": "<a file of the pool, as /packs/<id>/<path>>" } — the client rewrites the
@@ -85,7 +88,7 @@ export const PACK_TYPES = Object.freeze({
     }),
   }),
   data: Object.freeze({
-    status: 'supported', live: false,
+    status: 'supported', live: false, identity: true,
     summary: 'data patches the server applies at start; the client is served the patched tables',
     files: Object.freeze({
       // one or more `{ "<data file>": <merge patch> }` files (docs/PACKS.md §4): the server merges them into the tables
@@ -255,7 +258,7 @@ export function normalizeManifest(raw, ctx) {
  * A role marked `pool` (an assets pack's media) stays out: the client never needs those URLs — the map holds them — and
  * listing every file of a big pack would only bloat an index every visitor fetches.
  * @param {PackManifest} manifest
- * @param {{ files: Record<string, string | string[]>, strings?: number, overrides?: number, patches?: number }} extra files: role → URL
+ * @param {{ files: Record<string, string | string[]>, strings?: number, overrides?: number, patches?: number, size?: number }} extra files: role → URL
  */
 export function packIndexEntry(manifest, extra) {
   /** @type {Record<string, unknown>} */
@@ -263,6 +266,9 @@ export function packIndexEntry(manifest, extra) {
   if (manifest.version) e.version = manifest.version;
   if (manifest.app) e.app = manifest.app;
   e.compatible = manifest.compatible;
+  // The bytes of the pack's own files: not interesting on its own, but a server and a client both read it, so it is what
+  // makes the content tag (shared/contentTag.js) sensitive to an edited pack that kept its version.
+  if (Number.isFinite(extra.size)) e.size = extra.size;
   if (manifest.authors.length) e.authors = manifest.authors;
   if (manifest.credits) e.credits = manifest.credits;
   if (manifest.license) e.license = manifest.license;

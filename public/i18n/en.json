@@ -833,6 +833,8 @@
   "复制诊断信息": "Copy diagnostics",
   "遇到问题时，复制诊断信息并粘贴到 GitHub issue 中，开发者就能看到出错时的情况。诊断信息只在本机生成，不会自动上传；玩家名和房间号会被替换。": "If something goes wrong, copy the diagnostics and paste them into a GitHub issue so the developers can see what happened. They are generated on this device and never uploaded; player names and the room code are replaced.",
   "已记录的错误": "Errors recorded",
+  "已加载内容包": "Content packs",
+  "内容包与服务器不一致，请刷新页面": "Content packs differ from the server, reload the page",
   "附上本场战斗": "Attach this battle",
   "开发者可以用附上的战斗数据重现这场战斗。": "Developers can replay this battle from the attached data.",
   "已复制诊断信息，可以粘贴到 GitHub issue 中": "Diagnostics copied. Paste them into a GitHub issue.",

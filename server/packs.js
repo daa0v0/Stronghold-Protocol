@@ -20,6 +20,7 @@ import path from 'node:path';
 import { APP_VERSION } from '../shared/constants.js';
 import { PACK_TYPES, PACK_MANIFEST, PACKS_URL, normalizeManifest, packIndexEntry, buildPackIndex } from '../shared/packs.js';
 import { SOURCE_LANG, isLangCode, countStrings } from '../shared/i18nPacks.js';
+import { contentTag, contentSummary, isIdentityPack } from '../shared/contentTag.js';
 import { DATA_FILES } from './data.js';
 
 /** The language folders' subdirectory (public/i18n/, data/i18n/). */
@@ -30,9 +31,9 @@ const noop = () => {};
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /**
- * @typedef {{ rel: string, abs: string, url: string }} PackFile
+ * @typedef {{ rel: string, abs: string, url: string, bytes: number }} PackFile
  * @typedef {{ id: string, type: string, layout: 'file' | 'folder', where: string, supported: boolean,
- *   manifest: import('../shared/packs.js').PackManifest, files: Record<string, PackFile[]>, strings?: number,
+ *   manifest: import('../shared/packs.js').PackManifest, files: Record<string, PackFile[]>, bytes: number, strings?: number,
  *   overrides?: string[], patches?: { file: string, patch: any }[] }} Pack  files: role → its files (one entry for a
  *   plain role, a pool for a `many` role); overrides: the resource URLs an assets pack rewrites (`files.map`'s keys);
  *   patches: the data patches a data pack declares (server/dataPacks.js applies them)
@@ -43,6 +44,7 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const MAX_ASSET_OVERRIDES = 5000;
 
 const isFile = (abs) => { try { return fs.statSync(abs).isFile(); } catch { return false; } };
+const sizeOf = (abs) => { try { const st = fs.statSync(abs); return st.isFile() ? st.size : 0; } catch { return 0; } };
 const readDirSorted = (dir) => { try { return fs.readdirSync(dir).filter((n) => !n.startsWith('.')).sort(); } catch { return []; } };
 
 /** A JSON file of at most MAX_JSON_BYTES, or { error }. */
@@ -98,10 +100,11 @@ export function scanPacks({ publicDir, dataDir, packsDir }, { app = APP_VERSION 
     warn(where, w);
     if (!manifest) { skipped.push({ where, problems }); continue; }
     /** @type {Record<string, PackFile[]>} */
-    const files = { ui: [{ rel: name, abs, url: `/${LANG_DIR}/${name}` }] };
+    const files = { ui: [{ rel: name, abs, url: `/${LANG_DIR}/${name}`, bytes: sizeOf(abs) }] };
     const dataAbs = path.join(dataDir, LANG_DIR, name);
-    if (isFile(dataAbs)) files.data = [{ rel: name, abs: dataAbs, url: `/data/${LANG_DIR}/${name}` }];
-    found.push({ id: code, type: 'lang', layout: 'file', where, supported: true, manifest, files, strings: countStrings(r.json) });
+    if (isFile(dataAbs)) files.data = [{ rel: name, abs: dataAbs, url: `/data/${LANG_DIR}/${name}`, bytes: sizeOf(dataAbs) }];
+    const bytes = Object.values(files).reduce((sum, list) => sum + list.reduce((n, f) => n + f.bytes, 0), 0);
+    found.push({ id: code, type: 'lang', layout: 'file', where, supported: true, manifest, files, bytes, strings: countStrings(r.json) });
   }
 
   // folder packs: packs/<id>/pack.json
@@ -126,18 +129,23 @@ export function scanPacks({ publicDir, dataDir, packsDir }, { app = APP_VERSION 
     /** @type {Record<string, PackFile[]>} */
     const files = {};
     const missing = [];
+    let bytes = 0;
     for (const [role, given] of Object.entries(manifest.files)) {
       const list = (Array.isArray(given) ? given : [given]).map((rel) => {
         const abs = path.join(dir, ...rel.split('/'));
-        if (!isFile(abs)) missing.push(`files.${role}: ${rel} is missing`);
+        // one stat per file: existence, confinement and size — the size is part of the content tag (shared/contentTag.js)
+        let size = 0;
+        try { const st = fs.statSync(abs); if (st.isFile()) size = st.size; } catch { /* missing: reported below */ }
+        if (!size && !isFile(abs)) missing.push(`files.${role}: ${rel} is missing`);
         else if (!inside(dir, abs)) missing.push(`files.${role}: ${rel} leads out of the pack folder`);
-        return { rel, abs, url: fileUrl(id, rel) };
+        bytes += size;
+        return { rel, abs, url: fileUrl(id, rel), bytes: size };
       });
       files[role] = list;
     }
     if (missing.length) { skipped.push({ where, problems: missing }); continue; }
     /** @type {Pack} */
-    const pack = { id, type: manifest.type, layout: 'folder', where, supported: true, manifest, files };
+    const pack = { id, type: manifest.type, layout: 'folder', where, supported: true, manifest, files, bytes };
     if (manifest.type === 'lang') {
       const ui = readJson(files.ui[0].abs);
       if (ui.error || !ui.json || typeof ui.json !== 'object' || Array.isArray(ui.json)) {
@@ -231,7 +239,7 @@ export function packIndexOf(packs, { app = APP_VERSION } = {}) {
       if (kind?.files?.[role]?.pool) continue; // a pool's files are served but never listed: the map points at them
       files[role] = list.length === 1 ? list[0].url : list.map((f) => f.url);
     }
-    return packIndexEntry(p.manifest, { files, strings: p.strings, overrides: p.overrides?.length, patches: p.patches?.length });
+    return packIndexEntry(p.manifest, { files, strings: p.strings, overrides: p.overrides?.length, patches: p.patches?.length, size: p.bytes });
   });
   return buildPackIndex(entries, { app });
 }
@@ -297,6 +305,22 @@ export function createPackRegistry(dirs, { log = { info: noop, warn: noop }, app
     index: () => refresh().index,
     /** Packs that were not loaded and why, and the warnings of the loaded ones. */
     report: () => { const s = refresh(); return { skipped: s.skipped, warnings: s.warnings }; },
+    /**
+     * The content identity of this server (shared/contentTag.js): the packs in force and one short tag over them. What
+     * GET /healthz reports as `mods`, and what a client compares with the tag it computes from the index it loaded.
+     */
+    content() {
+      const identity = refresh().packs.filter((p) => p.supported && isIdentityPack(p.manifest)).map((p) => ({
+        type: p.type, id: p.id, version: p.manifest.version || '', compatible: p.manifest.compatible !== false, bytes: p.bytes,
+      }));
+      const languages = refresh().packs.filter((p) => p.supported && !isIdentityPack(p.manifest)).length;
+      return {
+        tag: contentTag(APP_VERSION, identity),
+        packs: identity.map(({ bytes, ...rest }) => rest),
+        languages,
+        summary: contentSummary(identity),
+      };
+    },
     /**
      * The file behind /packs/<id>/<rel>, or null: only a file a supported folder pack names.
      * @param {string} id

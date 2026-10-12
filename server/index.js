@@ -89,6 +89,10 @@ export async function startServer(opts = {}) {
   // their folders change.
   const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
   packs.refresh(true);
+  // The content identity of this server (docs/PACKS.md §4; shared/contentTag.js): one tag over the packs in force, in the
+  // start log, in GET /healthz (clients compare it with the tag they compute from the index) and on the returned object.
+  const content = packs.content();
+  if (content.packs.length) log.info(`[packs] content ${content.tag}: ${content.summary}`);
 
   // The process-wide singleton serves the default data dir; a custom dir (tests) gets its own copy.
   const baseData = opts.dataDir ? loadData(dataDir, { log }) : getData({ dir: dataDir, log });
@@ -157,7 +161,7 @@ export async function startServer(opts = {}) {
   });
   const admin = createAdminHandler({ admin: adminService, serveStatic, log });
   requestHandler = createRequestHandler({ serveStatic, announcements, assetCache, admin,
-    emergency: () => network.emergency, health: { startedAt, network, registry, lobby, bandwidthEmergency }, log });
+    emergency: () => network.emergency, health: { startedAt, network, registry, lobby, bandwidthEmergency, packs }, log });
   const server = http.createServer(requestHandler);
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log });

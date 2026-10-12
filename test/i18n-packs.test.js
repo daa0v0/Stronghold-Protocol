@@ -86,7 +86,9 @@ test('discovery: single-file language packs and folder packs, one registry; brok
     assert.ok(scan.warnings.some((w) => w.where === 'packs/qab/' && /made for app 0\.1\.x; this is 0\.2\.0/.test(w.warning)));
     const index = packIndexOf(scan.packs, { app: '0.2.0' });
     const qaa = index.packs.find((p) => p.id === 'qaa');
-    assert.deepEqual(qaa, {
+    const { size, ...qaaRest } = qaa;
+    assert.ok(Number.isFinite(size) && size > 0, 'the index carries the pack size: a client needs it for the content tag');
+    assert.deepEqual(qaaRest, {
       id: 'qaa', type: 'lang', name: 'Qaa-Sprache', englishName: 'Test language A', app: '>=0.2.0', compatible: true, authors: ['Tester'],
       lang: 'qaa', fallback: ['en'], strings: 1, files: { ui: '/i18n/qaa.json', data: '/data/i18n/qaa.json' },
     });

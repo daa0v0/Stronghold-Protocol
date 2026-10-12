@@ -197,6 +197,34 @@ an assets pack for the files.
 
 
 
+### The content tag (which packs a server runs)
+
+A page has to be able to tell whether the content it loaded is still the content the server runs. `shared/contentTag.js`
+turns a pack list into one short tag (`c0123456789ab`, two FNV-1a lanes) — an identity, not a security boundary — and
+`server/packs.js` reports it:
+
+| Where | What |
+|---|---|
+| `GET /healthz` → `mods: { tag, packs }` | the packs in force and the tag, always present (an empty pack list has its own tag) |
+| the start log | `[packs] content c<…>: 2 pack(s) (assets:hd-art@1.0.0, data:balance)` |
+| `GET /packs/index.json` → each entry's `size` | the bytes of the pack's own files: what lets a client reach the same tag |
+| 设置 → 问题反馈 | `已加载内容包 N`, and `内容包与服务器不一致，请刷新页面` when this page is stale |
+| the copied diagnostics | `content: tag c… \| page matches the server \| assets:hd-art@1.0.0, data:balance` |
+
+The tag covers what both sides can compute from what they are told: the app version and, per pack, its **type, id,
+version and size**. A pack edited without a version bump therefore moves the tag, and `public/js/ui/contentPacks.js`
+(fed by the index) reaches the same value the server reports — a mismatch means a pack was added or changed after the
+page loaded, and the player should reload.
+
+Only the types that change **what the game is** count (`PACK_TYPES[type].identity`: `assets`, `data`). A language pack is
+deliberately left out: it changes text a client opts into, so a stock server must not look modded and adding a
+translation must not move the tag.
+
+Not through the wire: the compact v1 position tables are frozen and a frame with extra values is rejected as malformed
+(`docs/WIRE_PROTOCOL.md`), so `welcome` and a BattleSpec cannot simply grow a field. That is why the tag travels as
+plain JSON (`/healthz`, the index) and why **per-room** mod state, when the create-room panel lands, will arrive as its
+own JSON-fallback message type (the way `room.skins` and `m.chat` did), not as an extra `welcome` field.
+
 ### Code and gameplay mods (the owner's decision, 2026-10-12)
 
 The study below kept third-party code out of packs. The owner has since decided that this project ships as an open
@@ -230,9 +258,10 @@ decision of 2026-10-12, see "Code and gameplay mods" above):
 
 - **Server-side only for gameplay.** A data pack is installed on the server, so every player of a room uses the same
   content and the server can still check or recompute a battle. A player never installs gameplay content of their own.
-- **A content hash in the handshake** before data packs ship (`welcome`, `/healthz`, the BattleSpec), so a client and
-  a server can tell they run the same content, and a "modded" mark in the UI and in bug reports. With code mods in
-  scope this is what keeps a room's players on one rule set: the hash has to cover the enabled mods, per room.
+- **A content tag in the handshake** — *partly done*: the tag exists (`shared/contentTag.js`), `GET /healthz` and the
+  start log report it, the index carries the `size` a client needs to compute it, and 设置 → 问题反馈 shows and copies it
+  ("The content tag" above). Still to come: the per-room mod set over the wire (a JSON-fallback type) when the
+  create-room panel lands, and a "modded" mark where a server's identity is shown to others.
 - ⚠ **No third-party code** — *replaced*: code mods are allowed, installed and enabled by the server owner (a pack
   manifest still never runs anything), and a room host chooses per room whether a match uses a mod.
 - **The golden results stay on the original content**; a pack never changes them.

@@ -58,6 +58,7 @@ import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
 import { installSkinsSync } from './ui/skins.js';
 import { installAssetPacks } from './ui/assetPacks.js';
+import { installContentPacks } from './ui/contentPacks.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { MAX_SEATS } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
@@ -407,6 +408,9 @@ async function boot() {
   // data.load('assets') below, so a pack that arrived with the page is applied in the same pass (a pack dropped in later
   // shows on the next page load, like a language pack).
   installAssetPacks();
+  // The content identity of the server (docs/PACKS.md §4): the pack list and the tag this page computes, compared with
+  // GET /healthz.mods — what 设置 → 问题反馈 shows and a bug report carries (ui/contentPacks.js).
+  installContentPacks();
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).
   installAudio({ getManifest: () => data.get('assets'), subscribe: store.subscribe, getState: store.get, selectRoute, settings: settingsStore.get() });
