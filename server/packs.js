@@ -354,8 +354,11 @@ export function createPackRegistry(dirs, { log = { info: noop, warn: noop }, app
     /** Packs that were not loaded and why, and the warnings of the loaded ones. */
     report: () => { const s = refresh(); return { skipped: s.skipped, warnings: s.warnings, denied: s.denied }; },
     /**
-     * Every pack the folders hold, with whether the owner's policy lets it load — what the /admin 内容包 panel shows.
-     * @returns {{ policy: { off: string[], allow: string[] } | null, packs: (Denied & { enabled: boolean })[] }}
+     * Every pack the folders hold, with whether the owner's policy lets it load, plus the resource URLs two **loaded**
+     * packs both rewrite — what the /admin 内容包 panel shows. A denied pack fights with nobody: only what is in force
+     * counts here (the scan's warning additionally reports a conflict between two packs the policy would load).
+     * @returns {{ policy: { off: string[], allow: string[] } | null, packs: (Denied & { enabled: boolean })[],
+     *   conflicts: { url: string, packs: string[] }[] }}
      */
     overview() {
       const s = refresh();
@@ -366,9 +369,20 @@ export function createPackRegistry(dirs, { log = { info: noop, warn: noop }, app
         bytes: p.bytes, overrides: p.overrides?.length || 0, patches: p.patches?.length || 0, strings: p.strings || 0,
       }));
       for (const d of s.denied) packs.push({ ...d, enabled: false, live: PACK_TYPES[d.type]?.live !== false });
+      /** @type {Map<string, string[]>} */
+      const claimed = new Map();
+      for (const p of s.packs) {
+        for (const url of p.overrides || []) {
+          const list = claimed.get(url);
+          if (list) list.push(p.id);
+          else claimed.set(url, [p.id]);
+        }
+      }
+      const conflicts = [...claimed].filter(([, ids]) => ids.length > 1).map(([url, ids]) => ({ url, packs: ids }));
       return {
         policy: pol ? { off: [...(pol.off || [])], allow: [...(pol.allow || [])] } : null,
         packs: packs.sort((a, b) => (a.type === b.type ? (a.id < b.id ? -1 : 1) : a.type < b.type ? -1 : 1)),
+        conflicts,
       };
     },
     /**

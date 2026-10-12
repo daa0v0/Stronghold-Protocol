@@ -206,9 +206,10 @@ export function buildDiagnostics(input) {
   const cp = input.packs || null;
   const cpList = (cp?.packs || []).map((p) => `${p.type}:${p.id}${p.version ? `@${p.version}` : ''}`).join(', ');
   const cpStale = !!(cp?.serverTag && cp?.tag && cp.serverTag !== cp.tag);
-  if (cp && (cpList || cpStale)) {
+  if (cp && (cpList || cpStale || (cp.code || []).length)) {
     lines.push(`content: ${join(`tag ${cp.tag || '?'}`, cpStale ? `SERVER ${cp.serverTag} — this page is out of date, reload`
-      : cp.serverTag ? 'page matches the server' : null, cpList || null)}`);
+      : cp.serverTag ? 'page matches the server' : null, cpList || null,
+      (cp.code || []).length ? `code mods (server-side, not verifiable here): ${cp.code.map((m) => `${m.id}@${m.version}`).join(', ')}` : null)}`);
   }
   if (b) {
     lines.push(`battle: ${join(b.kind, b.fieldId ? `field ${b.fieldId}` : null, b.authoritative ? 'authoritative' : b.watch ? 'watching' : null,

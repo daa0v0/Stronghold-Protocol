@@ -30,6 +30,7 @@ import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustP
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
+import { loadMods, modsReport, scanMods } from './mods.js';
 import { createAnnouncementStore } from './announcements.js';
 import { createAnnouncementNoticeMonitor } from './announcementNotices.js';
 import { createServerSettings } from './serverSettings.js';
@@ -82,7 +83,7 @@ export async function startServer(opts = {}) {
   const adminSecret = readAdminSecret(opts.adminSecret ? { ...process.env, ADMIN_SECRET: String(opts.adminSecret), ADMIN_SECRET_FILE: '' } : process.env);
   const logRing = createLogRing();
   const log = adminSecret.secret ? withLogRing(baseLog, logRing) : baseLog;
-  const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
+  const { publicDir, dataDir, sharedDir, packsDir, modsDir } = serveDirs(opts);
 
   // The owner's private settings (runtime/server-settings.json, /admin) come first: the pack registry reads their
   // content-pack policy on every scan (docs/PACKS.md §4).
@@ -105,6 +106,19 @@ export async function startServer(opts = {}) {
   const dataPacks = applyDataPacks(baseData, packs.list('data'), { log, known: DATA_FILES });
   const data = dataPacks.tables;
   const dataPackTagValue = dataPackTag(dataPacks, (t) => createHash('sha256').update(t).digest('hex'));
+
+  // 代码 mod (docs/PACKS.md §4): a folder under mods/ that the owner installs AND enables. Always scanned (so /admin can
+  // say what is there), loaded only when its id is in the settings — a folder dropped in must never run — and loaded here,
+  // after the packs and the data tables, so a mod may register content and see what the server will simulate with.
+  const modScan = scanMods(modsDir);
+  for (const w of modScan.warnings) log.warn(`[mods] ${w.where}: ${w.warning}`);
+  for (const k of modScan.skipped) log.warn(`[mods] ${k.where} skipped: ${k.problems.join('; ')}`);
+  const modRuntime = await loadMods(modScan.mods, { enabled: serverSettings.get().mods?.enabled || [], data, packs, log });
+  const modsState = modsReport(modScan, { enabled: serverSettings.get().mods?.enabled || [] }, modRuntime);
+  if (modsState.mods.length && !modRuntime.loaded.length) {
+    log.info(`[mods] ${modsState.mods.length} code mod(s) present, none enabled (runtime/server-settings.json, /admin)`);
+  }
+
   const { registry, lobby, network } = createSessionStack(opts, { data, log, packs });
   const announcements = createAnnouncementStore({ dir: opts.announcementsDir, root: ROOT, log });
   const announcementNotices = createAnnouncementNoticeMonitor({ store: announcements, network, log });
@@ -164,11 +178,12 @@ export async function startServer(opts = {}) {
   const adminService = createAdminService({
     enabled: !!adminSecret.secret, secret: adminSecret.secret, secretSource: adminSecret.source, problem: adminSecret.problem,
     lobby, network, registry, bandwidthEmergency, assetCache, serverSettings, announcements, packs, settingsDir: serverSettings.dir,
+    serverMods: modsState,
     ring: logRing, log, startedAt, build: buildTag,
   });
   const admin = createAdminHandler({ admin: adminService, serveStatic, log });
   requestHandler = createRequestHandler({ serveStatic, announcements, assetCache, admin,
-    emergency: () => network.emergency, health: { startedAt, network, registry, lobby, bandwidthEmergency, packs }, log });
+    emergency: () => network.emergency, health: { startedAt, network, registry, lobby, bandwidthEmergency, packs, serverMods: modsState }, log });
   const server = http.createServer(requestHandler);
   server.on('clientError', answerClientError);
   const wss = attachWebSocket(server, { network, log });
@@ -241,7 +256,8 @@ export async function startServer(opts = {}) {
   }
 
   return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, announcements, serverSettings,
-    bandwidthEmergency, admin: adminService, dataPacks: { applied: dataPacks.applied, tag: dataPackTagValue, overrides: dataPacks.overrides }, close };
+    mods: modsState, modScan, bandwidthEmergency, admin: adminService,
+    dataPacks: { applied: dataPacks.applied, tag: dataPackTagValue, overrides: dataPacks.overrides }, close };
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).

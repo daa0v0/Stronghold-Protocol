@@ -63,10 +63,12 @@ sudo systemctl restart stronghold
 | POST | `/api/admin/rooms/close` | `{ code }` → 关掉一个房间，里面的人收到 `room.closed{reason:"admin"}` 回到大厅；房间不存在返回 404 |
 | GET | `/api/admin/packs` | 每个内容包一条：类型、ID、名称、版本、声明的 `app` 范围、是否 `compatible`、**是否已加载/被停用/待确认**、是否 `live`、内容量（替换项/补丁表/文案数）、扫描位置；另有当前策略 `policy` 与内容标识 `tag`、语言包数量 `languages` |
 | POST | `/api/admin/packs` | 改内容包策略（见 §5）：`{ id, enabled }` 开关一个包、`{ id, confirmed: true }` 确认加载一个不兼容的包、或 `{ off: [], allow: [] }` 整体替换。返回更新后的同一份列表；涉及非实时类型时带 `restartRequired: true` |
+| GET | `/api/admin/mods` | 每个**代码 mod** 一条：ID、名称、版本、入口、适用版本、是否启用、**本进程是否真的加载了**、失败原因；另有策略 `policy` 与被跳过清单 `skipped` |
+| POST | `/api/admin/mods` | 改代码 mod 策略（见 §5）：`{ id, enabled }` 开关一个、或 `{ enabled: [...] }` 整体替换。**总是**返回 `restartRequired: true`（模块在启动时导入，运行中无法卸载） |
 
 错误码：`400 BAD_BODY`、`401 UNAUTHORIZED`/`BAD_SECRET`、`404 NOT_FOUND`（未知端点、房间不存在，或 `packs` 里给了未知的包 ID）、`405 METHOD_NOT_ALLOWED`（已知端点用了错方法）、`409 LANGUAGE_LOCKED`（想停用语言包）、`413 BODY_TOO_LARGE`（> 8 KB）、`429 TOO_MANY_ATTEMPTS`、`500 WRITE_FAILED`（设置文件写不进去）、`503 UNAVAILABLE`（本部署没有带宽控制，无法维护模式 / 没有包注册表）。
 
-## 5. 内容包开关（本仓库对"设置只由 CLI 写"的唯一例外）
+## 5. 内容包与代码 mod 开关（本仓库对"设置只由 CLI 写"的唯一例外）
 
 `serverSettings.js` 的原则是**服务器设置没有 HTTP 写入端点**：面板只展示，改动由 `node tools/server-settings.mjs …` 写。本仓库（2026-10-12，服主决定）为**内容包策略**开了唯一一个例外——mod 是运行中会反复开关的运维动作，从面板点比每次登服务器改文件现实。除此之外的一切设置仍然只由 CLI 写。
 
@@ -76,6 +78,13 @@ sudo systemctl restart stronghold
 - **不兼容的包**：改变玩法的类型（`assets`/`data`）默认被扣住，点「确认加载」后才加载；不兼容的**语言包**照旧加载并标记（只影响文案，缺的会回退）。
 - **生效时机**：`assets` 立即生效（索引、内容标识、文件下发同步变化）；`data` 需要**重启**（它的表在进程启动时就固定了），面板会显示「重启后生效」——这样索引、内容标识和 `/data/<name>.json` 永远不会互相矛盾。
 - 每次改动都写日志（`[admin] 内容包策略：…`），并可从 `docs/PACKS.md` §4「The owner's switches」查到完整语义。
+
+**代码 mod（`mods/`）** 与内容包同一份文件、同一个校验器、同一个面板原则：
+
+- 目录是 `mods/<id>/`（`mod.json` + 入口模块），**从不下发、从不进内容包索引**；放进去**不会执行**，必须在这里或 `mods.enabled` 里明确启用。
+- 面板列出 ID/名称/版本/入口/适用版本，以及**本进程是否真的跑起来了**与失败原因；`/healthz` 的 `mods.code` 与内容包 `tag` **分开报告**（代码 mod 只在服务端运行，客户端无法校验，只能被告知）。
+- 改动**总是**需要重启（`restartRequired`）：模块在启动时导入一次，运行中无法卸载。面板据此显示，而不是假装已生效。
+- 安全性：`mods/` 里的代码以**服务器自身权限**运行。只启用你读过或信任的 mod——面板上写明了这一点，`mods/README.md` 与 `docs/PACKS.md` §4 也写了。
 
 
 ## 6. 维护模式到底做了什么

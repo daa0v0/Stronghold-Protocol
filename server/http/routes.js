@@ -21,9 +21,14 @@ const MAX_URL_LENGTH = 4096;
 /**
  * The GET /healthz body.
  * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
- *           lobby: import('../lobby.js').Lobby, packs?: { content: () => { tag: string, packs: any[], summary: string } } }} health
+ *           lobby: import('../lobby.js').Lobby,
+ *           packs?: { content: () => { tag: string, packs: any[], summary: string } },
+ *           serverMods?: { mods: { id: string, version: string, running: boolean }[] } | null }} health
  */
-export function healthReport({ startedAt, network, registry, lobby, bandwidthEmergency, packs = null }) {
+export function healthReport({ startedAt, network, registry, lobby, bandwidthEmergency, packs = null, serverMods = null }) {
+  // 代码 mod (docs/PACKS.md §4): reported APART from the pack tag on purpose — a code mod runs in this process only, so a
+  // client cannot verify it; it is told, not trusted, and 设置 → 问题反馈 says so.
+  const code = (serverMods?.mods || []).filter((m) => m.running).map((m) => ({ id: m.id, version: m.version }));
   return {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
@@ -32,7 +37,9 @@ export function healthReport({ startedAt, network, registry, lobby, bandwidthEme
     // content packs (docs/PACKS.md §4): which ones this server runs and one tag over them, so a client can tell whether
     // the page it loaded still matches the server (public/js/ui/contentPacks.js). Always present when the caller has a
     // registry: an empty pack list has its own tag, which is what a client that loaded a pack must compare against.
-    ...(packs ? { mods: (() => { const c = packs.content(); return { tag: c.tag, packs: c.packs }; })() } : {}),
+    ...(packs || code.length ? {
+      mods: { ...(packs ? (() => { const c = packs.content(); return { tag: c.tag, packs: c.packs }; })() : {}), ...(code.length ? { code } : {}) },
+    } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
     ...(bandwidthEmergency ? { bandwidthEmergency: bandwidthEmergency.status() } : {}),
   };

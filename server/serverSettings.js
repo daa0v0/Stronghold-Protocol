@@ -11,7 +11,9 @@ export const SERVER_SETTINGS_FILE = 'server-settings.json';
 export const SERVER_SETTINGS_POLL_MS = 1000;
 const MAX_FILE_BYTES = 4096;
 const MAX_POLICY_IDS = 512;
-const SETTINGS_KEYS = ['version', 'maxAiPerRoom', 'requireAssetCache', 'assetCacheLimits', 'packs'];
+/** 代码 mod (docs/PACKS.md §4): fewer than the content packs, and each one is code the owner vouches for. */
+const MAX_MODS = 64;
+const SETTINGS_KEYS = ['version', 'maxAiPerRoom', 'requireAssetCache', 'assetCacheLimits', 'packs', 'mods'];
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 /** null means no server restriction; available room seats still bound the AI count. */
@@ -80,6 +82,29 @@ function checkedPackPolicy(raw) {
   return Object.freeze({ off: Object.freeze(off), allow: Object.freeze(allow) });
 }
 
+/**
+ * The owner's 代码 mod policy (docs/PACKS.md §4; set from /admin 代码 mod or the settings file): the ids of the code mods
+ * this server is allowed to load. **Nothing is enabled by default** — a folder dropped into `mods/` must never run until
+ * the owner names it here. null = none enabled.
+ */
+export function validModPolicy(value) {
+  if (value === null || value === undefined || value === false) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (Object.keys(value).some((key) => key !== 'enabled')) return false;
+  const list = value.enabled;
+  if (list === undefined) return true;
+  if (!Array.isArray(list) || list.length > MAX_MODS) return false;
+  return list.every((id) => isPackId(id)) && new Set(list).size === list.length;
+}
+
+/** null (none enabled) or a frozen `{ enabled }` with a frozen list. */
+function checkedModPolicy(raw) {
+  if (raw === null || raw === undefined) return null;
+  const enabled = [...(raw.enabled || [])];
+  if (!enabled.length) return null;
+  return Object.freeze({ enabled: Object.freeze(enabled) });
+}
+
 function initialAssetCacheLimits(env) {  const total = String(env.SP_ASSET_CACHE_TOTAL_BPS ?? '').trim();
   const client = String(env.SP_ASSET_CACHE_CLIENT_BPS ?? '').trim();
   if (!total && !client) return null;
@@ -119,12 +144,15 @@ function checkedSettings(raw) {
     || !validAiLimit(raw.maxAiPerRoom)
     || raw.requireAssetCache !== undefined && typeof raw.requireAssetCache !== 'boolean'
     || raw.assetCacheLimits !== undefined && !validAssetCacheLimits(raw.assetCacheLimits)
-    || !validPackPolicy(raw.packs)) throw new Error('服务器配置格式无效');
+    || !validPackPolicy(raw.packs)
+    || !validModPolicy(raw.mods)) throw new Error('服务器配置格式无效');
   const packs = checkedPackPolicy(raw.packs);
+  const mods = checkedModPolicy(raw.mods);
   // Existing version-1 AI-only files keep their former permissive admission policy — and keep their exact shape: the
-  // content-pack policy (`packs`) only appears once an owner has set one, so an untouched server reads as it always did.
+  // content-pack and code-mod policies only appear once an owner has set one, so an untouched server reads as it always did.
   return Object.freeze({ maxAiPerRoom: raw.maxAiPerRoom, requireAssetCache: raw.requireAssetCache ?? false,
-    assetCacheLimits: raw.assetCacheLimits ?? null, ...(raw.packs === undefined ? null : { packs }) });
+    assetCacheLimits: raw.assetCacheLimits ?? null, ...(raw.packs === undefined ? null : { packs }),
+    ...(raw.mods === undefined ? null : { mods }) });
 }
 
 /** Read-only startup and show operations never create a directory. null means no persistent override. */
@@ -156,7 +184,10 @@ export function writeServerSettings(dir, value) {
   if (Object.hasOwn(patch, 'packs') && !validPackPolicy(patch.packs)) {
     throw new RangeError('内容包策略无效：只允许 off / allow 两个 id 列表');
   }
-  if (!Object.keys(patch).length || Object.keys(patch).some((key) => !['maxAiPerRoom', 'requireAssetCache', 'assetCacheLimits', 'packs'].includes(key))
+  if (Object.hasOwn(patch, 'mods') && !validModPolicy(patch.mods)) {
+    throw new RangeError('代码 mod 策略无效：只允许 enabled 一个 id 列表');
+  }
+  if (!Object.keys(patch).length || Object.keys(patch).some((key) => !['maxAiPerRoom', 'requireAssetCache', 'assetCacheLimits', 'packs', 'mods'].includes(key))
     || Object.hasOwn(patch, 'requireAssetCache') && typeof patch.requireAssetCache !== 'boolean') throw new Error('服务器配置字段无效');
   fs.mkdirSync(dir, { recursive: true });
   verifyDirectory(dir);
@@ -220,7 +251,8 @@ export function createServerSettings(options = {}) {
     }
     if (next.maxAiPerRoom === state.maxAiPerRoom && next.requireAssetCache === state.requireAssetCache
       && JSON.stringify(next.assetCacheLimits) === JSON.stringify(state.assetCacheLimits)
-      && JSON.stringify(next.packs) === JSON.stringify(state.packs)) return false;
+      && JSON.stringify(next.packs) === JSON.stringify(state.packs)
+      && JSON.stringify(next.mods) === JSON.stringify(state.mods)) return false;
     const previous = state;
     state = next;
     if (notify) onChange?.(state, previous);

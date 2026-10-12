@@ -134,6 +134,25 @@
         </table>
       </div>
       <p id="packs-empty" class="dim">没有安装内容包。</p>
+      <p id="packs-conflicts" class="dim" hidden></p>
+    </section>
+
+    <!-- 代码 mod -->
+    <section class="panel">
+      <h2>代码 mod <span id="mods-count" class="badge badge--dim">0</span></h2>
+      <p class="dim">代码 mod 是 <code>mods/&lt;id&gt;/</code> 里的一个模块，运行在本服务器进程内、与服务端同等权限（可以 import
+        <code>server/</code> 下的任何东西）。<b class="state-frozen">只启用你读过或信任的 mod</b>；刚放进来的目录不会执行，必须在这里（或
+        <code>runtime/server-settings.json</code> 的 <code>mods.enabled</code>）明确启用。改动在<b>下次启动</b>生效——已加载的模块无法在运行中卸载。</p>
+      <div class="tablewrap">
+        <table id="mods">
+          <thead>
+            <tr><th>ID</th><th>名称</th><th>版本</th><th>入口</th><th>适用版本</th><th>状态</th><th></th></tr>
+          </thead>
+          <tbody id="mods-body"></tbody>
+        </table>
+      </div>
+      <p id="mods-empty" class="dim">mods/ 下没有代码 mod。</p>
+      <p id="mods-skipped" class="state-frozen" hidden></p>
     </section>
 
     <!-- 只读信息 -->
@@ -141,7 +160,7 @@
       <article class="card">
         <h3>服务器设置（只读）</h3>
         <pre id="info-settings" class="mono">—</pre>
-        <p class="dim">修改请用 CLI：<code>node tools/server-settings.mjs …</code>（设置默认只由 CLI 写入；内容包开关是唯一的例外）。</p>
+        <p class="dim">修改请用 CLI：<code>node tools/server-settings.mjs …</code>（设置默认只由 CLI 写入；内容包与代码 mod 开关是唯一的例外）。</p>
       </article>
       <article class="card">
         <h3>素材预缓存</h3>

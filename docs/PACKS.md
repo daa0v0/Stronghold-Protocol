@@ -290,14 +290,38 @@ the art manifest (ui/assetPacks.js `applyRoomMods`); leaving restores every pack
 The study below kept third-party code out of packs. The owner has since decided that this project ships as an open
 source fan remake whose players may write code mods, so:
 
-- **Running code is in scope**, but not through the manifest: a code mod is a folder the *server owner* installs and
-  enables, and it runs with the server's own privileges. Treat a downloaded mod as you would a downloaded executable:
-  read it, or only run ones you trust. The release notes and the mod list in `/admin` name what is enabled.
+- **Running code is in scope, but never through a pack manifest**: a pack's manifest still runs nothing and a pack's files
+  are served to browsers, while a code mod lives in `mods/` and runs inside the server process with its privileges. Treat a
+  downloaded mod as you would a downloaded executable: read it, or only run ones you trust (`mods/README.md` says that in
+  the author's terms).
 - **A mod is a server-level switch**, not a per-player one: the owner enables or disables it for the server, and a room
-  host chooses **per room** whether that match uses it (a panel on the create-room screen). A player never installs
-  gameplay content of their own — the server decides what a room runs, and every client is told (the content hash below).
-- **An incompatible pack is not loaded silently**: it is listed as `compatible: false`, and the owner confirms whether to
-  load it (the mod list; until that lands, the server logs it and loads it like a language pack does).
+  host chooses **per room** whether that match uses a *pack* (see "Per-room selection" above). A player never installs
+  gameplay content of their own — the server decides what a room runs, and every client is told.
+- **An incompatible pack is not loaded silently**: a pack outside its `app` range that changes the game is held back until
+  the owner confirms it, and the `/admin` panels name the reason for everything they do not load (see "The owner's
+  switches").
+
+#### The mechanism
+
+```
+mods/<id>/mod.json     { id, name, version, app, authors, entry: "main.mjs" }
+mods/<id>/main.mjs     export async function setup(ctx) { … }   ctx = { id, version, log, data, packs, root }
+```
+
+| Rule | Why |
+|---|---|
+| `mods/` is never served and never in `/packs/index.json`; a manifest with a pack's `type` field is refused | a pack is data a browser may fetch; a mod is code that runs here |
+| **Nothing runs until the owner lists the id** in `runtime/server-settings.json` (`mods.enabled`) or flips it in `/admin` → 代码 mod | dropping a folder in must never execute code by itself |
+| Loaded once at start, in id order, after the content packs and the data tables, and awaited | a mod may register content and see exactly what the server will simulate with |
+| A mod that cannot be imported, or whose `setup` rejects, is reported (`/admin`, the start log) and skipped | one broken mod must not keep the server from booting |
+| Enabling or disabling one needs a **restart** (the panel says `restartRequired`) | a module is imported once and cannot be unloaded from a running process |
+| `GET /healthz` reports them as `mods.code` — **apart from** the pack `tag` — and the 问题反馈 diagnostics name them as server-side and not verifiable here | a code mod never reaches a browser, so a client can be told about it but cannot check it; the pack tag stays the part a page can recompute for itself |
+| `entry` must be a `.mjs`/`.js` path inside the mod's own folder, and it is the only file the loader reads | a manifest must not reach outside its folder for what it runs |
+
+The loader is `server/mods.js` (`scanMods`, `loadMods`, `modsReport`); the panel is `/admin` → 代码 mod
+(`docs/ADMIN.md` §5). A gameplay mod changes the game through the server's own extension points
+(`server/sim/content/…`, the kits/traits/effects registries) — that is what "runs with the server's privileges" means, and
+it is why the switch is the owner's.
 
 ### Adding a pack type
 
@@ -322,8 +346,9 @@ decision of 2026-10-12, see "Code and gameplay mods" above):
   start log report it, the index carries the `size` a client needs to compute it, and 设置 → 问题反馈 shows and copies it
   ("The content tag" above). Still to come: the per-room mod set over the wire (a JSON-fallback type) when the
   create-room panel lands, and a "modded" mark where a server's identity is shown to others.
-- ⚠ **No third-party code** — *replaced*: code mods are allowed, installed and enabled by the server owner (a pack
-  manifest still never runs anything), and a room host chooses per room whether a match uses a mod.
+- ⚠ **No third-party code** — *replaced*: code mods are allowed through `mods/` (never through a pack manifest), the
+  server owner installs and enables each one, and they are reported apart from the content tag because a client cannot
+  verify them ("Code and gameplay mods" above).
 - **The golden results stay on the original content**; a pack never changes them.
 - ⚠ **A pack's app range never blocks silently** — *sharpened*: a pack outside its declared range is flagged
   `compatible: false`, and an owner-confirmed `allow` entry is what loads one that changes the game (a language pack

@@ -53,7 +53,7 @@ export function bindCandidates(host) {
 
 /**
  * The directories the static server reads (packsDir: the pack folders, server/packs.js).
- * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string }} opts
+ * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string, modsDir?: string }} opts
  */
 export function serveDirs(opts) {
   return {
@@ -61,6 +61,8 @@ export function serveDirs(opts) {
     dataDir: opts.dataDir || path.join(ROOT, 'data'),
     sharedDir: opts.sharedDir || path.join(ROOT, 'shared'),
     packsDir: opts.packsDir || path.join(ROOT, 'packs'),
+    // 代码 mod (docs/PACKS.md §4): never served, never in the pack index — server/mods.js reads it at start.
+    modsDir: opts.modsDir || path.join(ROOT, 'mods'),
   };
 }
 

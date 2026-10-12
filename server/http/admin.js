@@ -56,8 +56,8 @@ const wantJson = (req) => {
 };
 
 /** The leaf names below /api/admin. Anything else is 404; a known leaf with the wrong method is 405. */
-const READ_ENDPOINTS = new Set(['/overview', '/rooms', '/logs', '/packs']);
-const WRITE_ENDPOINTS = new Set(['/broadcast', '/maintenance', '/rooms/close', '/packs']);
+const READ_ENDPOINTS = new Set(['/overview', '/rooms', '/logs', '/packs', '/mods']);
+const WRITE_ENDPOINTS = new Set(['/broadcast', '/maintenance', '/rooms/close', '/packs', '/mods']);
 
 /**
  * @param {{ admin: any, serveStatic: (req: any, res: any, rawPath: string, query: string) => Promise<void>,
@@ -138,6 +138,7 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
       if (leaf === '/overview') { json(req, res, 200, admin.overview()); return true; }
       if (leaf === '/rooms') { json(req, res, 200, admin.rooms()); return true; }
       if (leaf === '/packs') { json(req, res, 200, admin.packs()); return true; }
+      if (leaf === '/mods') { json(req, res, 200, admin.mods()); return true; }
       const q = new URLSearchParams(parts.query);
       const since = Number(q.get('since')) || 0;
       const limit = Math.min(400, Math.max(1, Number(q.get('limit')) || 200));
@@ -167,6 +168,15 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
       const result = admin.setPacks(body);
       const status = result.ok ? 200 : result.error === 'UNKNOWN_PACK' ? 404 : result.error === 'LANGUAGE_LOCKED' ? 409
         : result.error === 'UNAVAILABLE' ? 503 : result.error === 'WRITE_FAILED' ? 500 : 400;
+      json(req, res, status, result);
+      return true;
+    }
+    if (leaf === '/mods') {
+      // 代码 mod (docs/PACKS.md §4): the switch is written but the code was imported at start, so the answer always says
+      // restartRequired — the console shows that instead of pretending it took effect.
+      const result = admin.setMods(body);
+      const status = result.ok ? 200 : result.error === 'UNKNOWN_MOD' ? 404 : result.error === 'UNAVAILABLE' ? 503
+        : result.error === 'WRITE_FAILED' ? 500 : 400;
       json(req, res, status, result);
       return true;
     }

@@ -145,7 +145,7 @@ export function createAdminService(deps) {
   const {
     enabled, problem = '', secretSource = null, secret = null,
     lobby, network, registry, bandwidthEmergency = null, assetCache = null,
-    serverSettings = null, announcements = null, packs = null, settingsDir = null,
+    serverSettings = null, announcements = null, packs = null, settingsDir = null, serverMods = null,
     ring, log = console, startedAt = Date.now(), now = Date.now, build = () => '',
   } = deps;
   const sessionToken = enabled ? newSessionToken() : '';
@@ -333,11 +333,65 @@ export function createAdminService(deps) {
   const maintenanceAvailable = () => !!bandwidthEmergency;
 
   /**
+   * 代码 mod (docs/PACKS.md §4): what `mods/` holds, which of them the owner enabled, which ones this process actually
+   * loaded (and why a skipped one was skipped). Only the owner sees this, and only the owner may change it.
+   */
+  function modsOverview() {
+    if (!serverMods) return { available: false, mods: [], skipped: [], warnings: [], policy: null };
+    const pol = serverSettings?.get?.().mods || null;
+    const on = new Set(pol?.enabled || []);
+    return {
+      available: true,
+      // `enabled` is the switch as the settings say it NOW — a change made here must show up before the restart — while
+      // `running`/`error` stay the facts of this process (the boot-time report, server/mods.js modsReport).
+      mods: (serverMods.mods || []).map((m) => ({ ...m, enabled: on.has(m.id) })),
+      skipped: serverMods.skipped || [],
+      warnings: serverMods.warnings || [],
+      policy: pol ? { enabled: [...pol.enabled] } : null,
+    };
+  }
+
+  /**
+   * Enable or disable code mods: `{ id, enabled }` for one, or `{ enabled: [...] }` for the whole list. Written through
+   * serverSettings.js, so the CLI and the panel share one file and one validator.
+   *
+   * Always `restartRequired`: a code mod is imported once at start and cannot be unloaded from a running process, so the
+   * panel says so instead of pretending a switch took effect.
+   * @param {{ enabled?: string[] } | { id?: string, enabled?: boolean } | any} body
+   */
+  function setMods(body) {
+    if (!serverMods || !settingsDir) return { ok: false, error: 'UNAVAILABLE' };
+    const known = new Map((serverMods.mods || []).map((m) => [m.id, m]));
+    const current = [...((serverSettings?.get?.().mods?.enabled) || [])];
+    /** @type {string[]} both branches below set it before use */
+    let enabled;
+    if (body && typeof body === 'object' && 'id' in body) {
+      const id = String(body.id || '');
+      if (!known.has(id)) return { ok: false, error: 'UNKNOWN_MOD' };
+      const on = body.enabled !== false;
+      enabled = on ? (current.includes(id) ? current : [...current, id]) : current.filter((x) => x !== id);
+    } else if (body && typeof body === 'object' && Array.isArray(body.enabled)) {
+      if (Object.keys(body).some((key) => key !== 'enabled')) return { ok: false, error: 'BAD_REQUEST' };
+      enabled = body.enabled.map((x) => String(x));
+      for (const id of enabled) if (!known.has(id)) return { ok: false, error: 'UNKNOWN_MOD' };
+    } else return { ok: false, error: 'BAD_REQUEST' };
+    try {
+      writeServerSettings(settingsDir, { mods: { enabled } });
+    } catch (error) {
+      log.warn?.(`[admin] 代码 mod 策略写入失败：${String(error?.message || error)}`);
+      return { ok: false, error: 'WRITE_FAILED', message: String(error?.message || error) };
+    }
+    try { serverSettings?.poll?.(); } catch (error) { log.warn?.('[admin] 代码 mod 策略刷新失败', error?.message || error); }
+    log.info?.(`[admin] 代码 mod 策略：启用 [${enabled.join(', ')}]（重启后生效）`);
+    return { ok: true, restartRequired: true, ...modsOverview() };
+  }
+
+  /**
    * The 内容包 panel (docs/PACKS.md §4): every pack the folders hold, whether the owner's policy lets it load and why not,
    * plus the content tag of what is in force. Read-only here; `setPacks` below is the one write this fork allows.
    */
   function packsOverview() {
-    if (!packs) return { available: false, packs: [], policy: null, tag: '', languages: 0 };
+    if (!packs) return { available: false, packs: [], policy: null, conflicts: [], tag: '', languages: 0 };
     const view = packs.overview();
     const content = packs.content();
     return { available: true, ...view, tag: content.tag, languages: content.languages };
@@ -412,7 +466,7 @@ export function createAdminService(deps) {
     enabled, problem, secretSource,
     authenticate, login, loggedOut,
     overview, rooms, closeRoom, broadcast, setMaintenance, maintenanceAvailable,
-    packs: packsOverview, setPacks,
+    packs: packsOverview, setPacks, mods: modsOverview, setMods,
     /** @param {number} since @param {number} limit */
     logs: (since, limit) => ({ ...ring.list(since, limit), at: now() }),
     /** Diagnostics for the boot line; never includes the secret. */

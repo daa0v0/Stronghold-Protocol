@@ -18,7 +18,7 @@ export const PACK_INDEX_URL = '/packs/index.json';
 /** The server's own report, read for its `mods.tag` (ui/buildGuard.js reads the same endpoint for `build`). */
 export const HEALTH_URL = '/healthz';
 
-let state = { tag: '', serverTag: '', packs: [], languages: 0, summary: '', mismatch: false, loaded: false, error: null };
+let state = { tag: '', serverTag: '', packs: [], code: [], languages: 0, summary: '', mismatch: false, loaded: false, error: null };
 /** The index entries and the app version they were computed from (a room's subset needs `contentTagOf`). */
 let entries = [];
 let app = '';
@@ -58,13 +58,19 @@ export async function loadContentTag({ fetchImpl = (url, init) => fetch(url, ini
     entries = packs;
     app = String((json && json.app) || '');
     let serverTag = '';
+    let code = [];
     try {
       const h = await fetchImpl(healthUrl, { cache: 'no-store' });
-      if (h && h.ok) serverTag = (await h.json())?.mods?.tag || '';
+      if (h && h.ok) {
+        const body = await h.json();
+        serverTag = body?.mods?.tag || '';
+        // 代码 mod (docs/PACKS.md §4): server-side only, so this page can only be TOLD about them (no tag to verify).
+        code = Array.isArray(body?.mods?.code) ? body.mods.code : [];
+      }
     } catch { /* the server's tag is a courtesy: an unreachable /healthz leaves it empty, never a failure */ }
     const mismatch = !!(serverTag && tag && serverTag !== tag);
     state = {
-      tag, serverTag, mismatch, loaded: true, error: null, summary: contentSummary(identity),
+      tag, serverTag, mismatch, loaded: true, error: null, summary: contentSummary(identity), code,
       languages: packs.length - identity.length,
       packs: identity.map((p) => ({ type: p.type, id: p.id, version: p.version || '', name: p.name || p.id, compatible: p.compatible !== false })),
     };

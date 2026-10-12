@@ -161,6 +161,16 @@ function renderPacks(body) {
   text('packs-count', packs.length);
   text('packs-tag', body && body.tag ? body.tag : '—');
   show('packs-empty', packs.length === 0);
+  // Two packs rewriting the same resource URL: both load, the later id wins, and the operator should know (docs/PACKS.md §4).
+  const conflicts = (body && body.conflicts) || [];
+  const conflictLine = $('packs-conflicts');
+  if (conflictLine) {
+    conflictLine.hidden = conflicts.length === 0;
+    conflictLine.className = conflicts.length ? 'state-frozen' : 'dim';
+    conflictLine.textContent = conflicts.length
+      ? `${conflicts.length} 处资源被多个包改写（id 较大的生效）：` + conflicts.slice(0, 6).map((c) => `${c.url} ← ${c.packs.join(' + ')}`).join('；')
+      : '';
+  }
   for (const p of packs) {
     const tr = document.createElement('tr');
     const cell = (value, cls) => {
@@ -223,6 +233,65 @@ async function setPack(body) {
   poll();
 }
 
+/**
+ * 代码 mod panel (docs/PACKS.md §4): what mods/ holds and which of them this process loaded. The switch writes the owner's
+ * settings and always takes effect at the next start, so the panel says 重启后生效 instead of pretending otherwise.
+ * @param {{ mods?: any[], skipped?: any[], warnings?: any[] }} body
+ */
+function renderMods(body) {
+  const tbody = $('mods-body');
+  if (!tbody) return;
+  tbody.textContent = '';
+  const mods = (body && body.mods) || [];
+  text('mods-count', mods.length);
+  show('mods-empty', mods.length === 0);
+  for (const m of mods) {
+    const tr = document.createElement('tr');
+    const cell = (value, cls) => {
+      const td = document.createElement('td');
+      td.textContent = value == null || value === '' ? '—' : String(value);
+      if (cls) td.className = cls;
+      tr.appendChild(td);
+      return td;
+    };
+    cell(m.id, 'mono');
+    cell(m.name);
+    cell(m.version);
+    cell(m.entry, 'mono');
+    cell(m.app || '任意');
+    const state = m.running ? '运行中' : m.error ? '加载失败' : m.enabled ? '待重启' : '未启用';
+    cell(state, m.running ? 'state-live' : m.error ? 'state-frozen' : '');
+    if (m.error) tr.title = m.error;
+    const actions = document.createElement('td');
+    actions.className = 'row';
+    actions.appendChild(packButton(m.enabled ? '停用' : '启用', m.enabled ? 'btn--danger' : 'btn--primary',
+      () => setMod({ id: m.id, enabled: !m.enabled })));
+    tr.appendChild(actions);
+    tbody.appendChild(tr);
+  }
+  const skipped = (body && body.skipped) || [];
+  const warnings = (body && body.warnings) || [];
+  const line = $('mods-skipped');
+  if (line) {
+    const rows = [...skipped.map((s) => `${s.where}: ${s.problems.join('; ')}`), ...warnings.map((w) => `${w.where}: ${w.warning}`)];
+    line.hidden = rows.length === 0;
+    line.textContent = rows.slice(0, 6).join(' ｜ ');
+  }
+}
+
+/** Flip one code-mod switch; the server answers with restartRequired, which is what the operator needs to hear. */
+async function setMod(body) {
+  const res = await api('/mods', { body });
+  if (res.status === 200) {
+    renderMods(res.body);
+    if (res.body && res.body.restartRequired) alert('已保存。代码 mod 在服务器启动时加载，重启后生效。');
+    return;
+  }
+  const why = res.body && res.body.error;
+  alert(why === 'UNKNOWN_MOD' ? '这个 mod 已经不在了，列表已刷新。' : '操作失败：' + (why || res.status));
+  poll();
+}
+
 async function poll() {
   if (polling) return;
   polling = true;
@@ -238,6 +307,9 @@ async function poll() {
 
     const packs = await api('/packs');
     if (packs.status === 200 && packs.body) renderPacks(packs.body);
+
+    const mods = await api('/mods');
+    if (mods.status === 200 && mods.body) renderMods(mods.body);
 
     const logs = await api('/logs?since=' + state.since + '&limit=200');
     if (logs.status === 200 && logs.body) {
