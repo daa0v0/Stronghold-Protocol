@@ -11,6 +11,7 @@ import { weightedPick } from '../waves.js';
 import { botPickCard } from '../bot.js';
 import { OK, fail, DELAYS } from './common.js';
 import { installDraftFacade } from './phases.js';
+import { matchRules } from '../../../shared/matchRules.js';
 
 /** Cards of the personal choice (PRTS 卫戍协议：盟约 下半 §法术 教鞭: "于3个战术特训的悬赏任务中选择一项"). */
 const PERSONAL_OFFER_SIZE = 3;
@@ -49,8 +50,12 @@ export class MatchSpDraft {
     return g && !g.done ? g.order[g.idx] ?? null : null;
   }
 
+  /**
+   * Whether a card of this group can still be picked. `matchRules().choiceDuplicates` (shared/matchRules.js, set by a code
+   * mod) keeps a card available after the first pick; the shipped rule is one holder per card.
+   */
   spCardAvailable(card, group = this.spGroup()) {
-    return !!card && !!group && group.taken[card.idx] == null &&
+    return !!card && !!group && (matchRules().choiceDuplicates || group.taken[card.idx] == null) &&
       (card.kind !== 'item' || this.itemPoolFor(group.playerIds[0]).canGain(card.id));
   }
 
@@ -137,7 +142,9 @@ export class MatchSpDraft {
     if (!card) return;
     s.picks[ps.playerId] = idx;
     g.picks[ps.playerId] = idx;
-    g.taken[idx] = ps.playerId;
+    // `taken` names the FIRST holder of a card. With `choiceDuplicates` a later picker is recorded in `picks` only, which
+    // keeps the shape the client already reads (`sp.taken`) intact and tells it to keep such cards pickable.
+    if (g.taken[idx] == null) g.taken[idx] = ps.playerId;
     try { applyCard(this, ps, card); } catch (e) { this.reportError(`applyCard ${card.id}`, e); }
     this.markPrivate(ps);
     this.markPublic();

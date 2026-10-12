@@ -1,0 +1,10 @@
+{
+  "id": "dup-strategies",
+  "name": "同策略可复选",
+  "englishName": "Duplicate strategy picks",
+  "version": "1.0.0",
+  "app": ">=0.2.4",
+  "authors": ["Stronghold Protocol"],
+  "description": "同一机变卡池内允许多名玩家选择同一张卡（原本池内每张卡只能被一人选走）。config.json 可开关。",
+  "entry": "main.mjs"
+}

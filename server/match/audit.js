@@ -45,6 +45,7 @@
 
 import { PHASE, MAX_DRAFT_CARDS } from '../../shared/constants.js';
 import { coopDraftCardCount, uniteRoundLimit } from '../../shared/playerCapacity.js';
+import { matchRules } from '../../shared/matchRules.js';
 import { collectViolations } from './invariants.js';
 import { mergeTile, pieceDir, canPlace, placeClass } from './board.js';
 import { pairPlayers, bossPoolHp, hiddenEligible } from './finalAssault.js';
@@ -419,6 +420,7 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
   wrap(m, 'finishSpDraft', function (orig) {
     const s = m.sp;
     if (m.phase === PHASE.SP_DRAFT && s) check('sp draft', () => {
+      const dup = matchRules().choiceDuplicates;
       const alive = m.alivePlayers().map((p) => p.playerId);
       const configured = gd.choices.schedule?.[gd.modeId]?.rounds?.[String(m.round)]?.cards;
       const soloCount = Number.isInteger(configured) && configured > 0 ? configured : gd.choices.format?.solo?.cards || 3;
@@ -434,17 +436,26 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
         for (const pid of alive.filter((p) => !g.playerIds || g.playerIds.includes(p))) {
           const idx = g.picks[pid];
           if (idx == null) fail(`${pid} ends 机变 without a card`);
-          else if (!cards.has(idx) || g.taken[idx] !== pid) fail(`${pid} picked card ${idx} held by ${g.taken[idx]} in group ${g.id ?? 1}`);
+          else if (!cards.has(idx) || g.taken[idx] == null) fail(`${pid} picked card ${idx} that nobody holds in group ${g.id ?? 1}`);
+          // With `choiceDuplicates` (a mod rule, shared/matchRules.js) `taken[idx]` names only the FIRST holder, so a second
+          // picker is legitimate; under the shipped rule every card must belong to exactly the player who picked it.
+          else if (!dup && g.taken[idx] !== pid) fail(`${pid} picked card ${idx} held by ${g.taken[idx]} in group ${g.id ?? 1}`);
         }
         for (const [pid, idx] of Object.entries(g.picks)) {
           if (g.playerIds && !g.playerIds.includes(pid)) fail(`机变 group ${g.id}: outsider ${pid} picked`);
           if (s.picks[pid] !== idx) fail(`机变 group ${g.id ?? 1}: ${pid} pick differs from the global map`);
-          if (g.taken[idx] !== pid) fail(`机变 group ${g.id ?? 1}: ${pid} pick is not held`);
+          if (g.taken[idx] == null) fail(`机变 group ${g.id ?? 1}: ${pid} pick is not held`);
         }
         const holders = Object.values(g.taken);
         if (new Set(holders).size !== holders.length) fail(`机变 group ${g.id ?? 1}: a player took two cards`);
         for (const [idx, pid] of Object.entries(g.taken)) {
           if (!cards.has(Number(idx)) || g.picks[pid] !== Number(idx)) fail(`机变 group ${g.id ?? 1}: held card ${idx} has no matching pick`);
+        }
+        if (!dup) {
+          for (const idx of cards) {
+            const pickers = Object.values(g.picks).filter((picked) => picked === idx).length;
+            if (pickers > 1) fail(`机变 group ${g.id ?? 1}: card ${idx} was picked by ${pickers} players (the pool is unique)`);
+          }
         }
       }
       for (const pid of Object.keys(s.picks)) if (!draftGroups(s).some((g) => g.picks[pid] === s.picks[pid])) fail(`机变: ${pid} appears only in the global pick map`);

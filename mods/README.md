@@ -5,6 +5,18 @@ privileges. It is deliberately not a content pack: a pack's manifest never runs 
 browsers, while a mod is code. So this tree is never served, never listed in `/packs/index.json`, and **a folder dropped
 here does nothing until the server owner enables it**.
 
+## Shipped examples
+
+Real, enableable mods live here — read one instead of only a sketch:
+
+| Folder | What it changes |
+|---|---|
+| `dup-strategies/` | 同一机变卡池内多名玩家可选同一张卡 (`shared/matchRules.js` `choiceDuplicates`) |
+
+Each ships its own `config.json` (an owner can keep the mod installed but off) and its own test under `test/match/`.
+The rules a mod may change are listed in [docs/MODS.md](../docs/MODS.md) §4.6 — an ES module's exports cannot be reassigned
+from outside, so behaviour changes go through a hook the core provides.
+
 ## Layout
 
 ```

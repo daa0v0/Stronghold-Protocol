@@ -10,6 +10,7 @@ import { bondList, offBondCounts } from '../bondsMeta.js';
 import { cardView } from '../choices.js';
 import { bountySpawns, previewOf } from '../waves.js';
 import { timelineAt } from '../fields.js';
+import { matchRules } from '../../../shared/matchRules.js';
 import { bossFieldPlacement } from '../finalAssault.js';
 import { battleProgress } from '../../sim/spec.js';
 
@@ -157,6 +158,9 @@ export class MatchViews {
       const s = this.sp;
       v.sp = {
         id: s.id,
+        // The draft rule the client has to know about (docs/MODS.md): with `choiceDuplicates` a card another player already
+        // holds stays pickable, so the client must not grey it out. The shipped game sends false and behaves as before.
+        allowDuplicates: matchRules().choiceDuplicates,
         groups: s.groups.map((g) => ({
           id: g.id, playerIds: g.playerIds.slice(), order: g.order.slice(),
           family: g.family, name: g.name, desc: g.desc, eventId: g.eventId,

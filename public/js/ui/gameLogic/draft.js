@@ -116,6 +116,9 @@ function spPage(sp, players, grouped = false, inherited = null) {
   return {
     family: meta('family'), name: meta('name'), desc: meta('desc'), eventId: meta('eventId'),
     untimed: !!(sp.untimed ?? inherited?.untimed),
+    // A mod rule (docs/MODS.md, shared/matchRules.js): with duplicate picks allowed, a card another player holds stays
+    // pickable, so the views keep `takenBy` for display but must not treat it as "unavailable".
+    allowDuplicates: !!(sp.allowDuplicates ?? inherited?.allowDuplicates),
     turnDeadline: clockNumber(sp.turnDeadline), turnSeconds: clockNumber(sp.turnSeconds),
     cards, order, turnPid: turnPlayer(sp.turn, order), pickOf, takenBy, pickedCount: pickOf.size, done,
   };
