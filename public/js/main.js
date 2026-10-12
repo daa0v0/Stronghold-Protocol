@@ -57,6 +57,7 @@ import { StatsHost } from './screens/stats.js';
 import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
 import { installSkinsSync } from './ui/skins.js';
+import { installAssetPacks } from './ui/assetPacks.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { MAX_SEATS } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
@@ -402,6 +403,10 @@ async function boot() {
   installOwnershipSync({ net });
   installDiySync({ net });
   installSkinsSync({ net }); // 干员皮肤 (docs/SKINS.md): room.skins after every welcome and edit
+  // 资源包 (docs/PACKS.md, type "assets"): register the manifest transform and read /packs/index.json. Before the first
+  // data.load('assets') below, so a pack that arrived with the page is applied in the same pass (a pack dropped in later
+  // shows on the next page load, like a language pack).
+  installAssetPacks();
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).
   installAudio({ getManifest: () => data.get('assets'), subscribe: store.subscribe, getState: store.get, selectRoute, settings: settingsStore.get() });

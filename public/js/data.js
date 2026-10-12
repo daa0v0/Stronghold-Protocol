@@ -197,6 +197,25 @@ export function createDataStore(opts = {}) {
     return Promise.race([req, timed]);
   }
 
+  /**
+   * Transformers of a file, run once as it arrives and before anything reads it (content packs, docs/PACKS.md: an
+   * "assets" pack maps the resource URLs of data/assets.json onto its own files). A transformer may mutate the value in
+   * place and return nothing, or return a replacement object.
+   */
+  const transforms = new Map();
+  function applyTransforms(name, entry) {
+    const fns = transforms.get(name);
+    if (!fns || !fns.length || !entry.value) return;
+    for (const fn of fns) {
+      try {
+        const out = fn(entry.value);
+        if (out && typeof out === 'object') entry.value = out;
+      } catch (err) {
+        console.warn(`[data] ${name}: transform failed (${err?.message || err}); continuing with the original`);
+      }
+    }
+  }
+
   function load(name) {
     if (typeof name !== 'string' || !/^[A-Za-z0-9_-]+$/.test(name)) return Promise.resolve(null);
     const cur = entries.get(name);
@@ -208,6 +227,7 @@ export function createDataStore(opts = {}) {
       for (let attempt = 0; ; attempt++) {
         try {
           entry.value = await readJson(name);
+          applyTransforms(name, entry);
           entry.status = 'ready';
           break;
         } catch (err) {
@@ -402,11 +422,29 @@ export function createDataStore(opts = {}) {
       }
       return zh;
     },
+    /**
+     * Run `fn(value)` on a file as it is loaded (content packs: docs/PACKS.md, type "assets"). Registered before the
+     * first load of that file; returns a function that removes it again.
+     * @param {string} name @param {(value: any) => any} fn
+     */
+    onManifest(name, fn) {
+      if (typeof name !== 'string' || typeof fn !== 'function') return () => {};
+      const list = transforms.get(name) || [];
+      list.push(fn);
+      transforms.set(name, list);
+      return () => { const i = list.indexOf(fn); if (i >= 0) list.splice(i, 1); };
+    },
   };
 }
 
 /** Browser data store singleton. */
 export const data = createDataStore();
+
+/**
+ * Run `fn` on a file of the singleton store as it is loaded (content packs: docs/PACKS.md, type "assets").
+ * @param {string} name @param {(value: any) => any} fn @returns {() => void} remove it again
+ */
+export const onManifest = (name, fn) => data.onManifest(name, fn);
 
 /** @param {...string} names @returns {Promise<any[]>} */
 export const loadData = (...names) => data.loadAll(...names);

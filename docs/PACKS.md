@@ -108,11 +108,69 @@ pack's files are the language folders' own (`/i18n/<code>.json`, `/data/i18n/<co
 | Type | Status | Where it applies | Loader |
 |---|---|---|---|
 | `lang` | supported (0.2.0) | the client: UI strings, game texts | `public/js/ui/lang.js` (the menu, the strings: `shared/i18n.js`; the game texts: `public/js/data.js`) |
-| `assets` | planned | the client: art, audio, font replacements | — |
+| `assets` | supported (0.2.5-dev) | the client: art, models, audio, fonts | `public/js/ui/assetPacks.js` (the map) + `public/js/data.js` `onManifest` (applied to the loaded `data/assets.json`) |
 | `data` | planned | the server: data patches applied at start | — |
 
-A pack of a planned type is parsed and listed as not supported ("type "assets" is planned …, not loaded by this
+A pack of a planned type is parsed and listed as not supported ("type "data" is planned …, not loaded by this
 version"); it is never served and never changes anything.
+
+### The `assets` type
+
+An assets pack replaces or adds the resources the game draws and plays **without touching the code**. Every picture,
+model and sound is resolved from URLs in `data/assets.json` — `assets.js` reads them for avatars, portraits, skill /
+item / enemy icons and every Spine skeleton, atlas and texture; `audio.js` reads the manifest's own BGM and unit-SFX
+entries. So the pack only hands the client a map from those URLs to its own files:
+
+```
+packs/hd-art/pack.json
+packs/hd-art/map.json     { "/assets/char/avatar/char_x.png": "/packs/hd-art/img/x.png", … }
+packs/hd-art/img/x.png
+```
+
+```json
+{
+  "type": "assets", "name": "高清立绘", "version": "1.0.0", "app": ">=0.2.0", "authors": ["…"],
+  "files": { "map": "map.json", "media": ["img/x.png", "audio/lobby.mp3"] }
+}
+```
+
+| Role | Meaning |
+|---|---|
+| `map` | required, one `.json`: resource URL of this server → a file of the pool, written as `/packs/<id>/<path>` |
+| `media` | required, a list (one path is also accepted): every file the map may point at. Extensions: images, `.skel` / `.atlas`, audio, fonts, `.json` |
+
+Rules the registry enforces, so a broken pack cannot half-apply:
+
+- **A map value must be one of the pack's own `media` files.** A pack cannot point at the game's own art, at another
+  pack, or at a file it did not declare (only named files are ever served: §3) — such a pack is skipped with the reason.
+- **A map key must be a path on this server** (`/…`, never a scheme or `//host`).
+- **Two packs may rewrite the same URL**: both load, the later id wins (the index is sorted by type then id), and
+  `tools/packs.mjs check` and the server log report the conflict. `pack.overrides` in the index says how many URLs a
+  pack rewrites.
+- **Adding is the same as replacing**: a map entry for a URL nothing points at yet changes nothing until new data
+  references it — content that a pack *adds* (a new operator, a new skin) therefore needs the `data` type as well.
+- **Cache**: the client fetches each replacement with the pack's `version` in the query, so a new version is not served
+  from a browser cache.
+- A pack is data, never a program: `media` accepts art, models, audio and fonts, and an extension outside that list is
+  refused.
+
+The client half is small on purpose: `ui/assetPacks.js` reads `/packs/index.json`, fetches the maps, merges them (later
+id wins) and rewrites the loaded manifest through the `data.js` transform hook. A pack dropped into `packs/` shows on
+the next page load — the same as a language pack — and the game's own art is used when the index or a map cannot be read.
+
+### Code and gameplay mods (the owner's decision, 2026-10-12)
+
+The study below kept third-party code out of packs. The owner has since decided that this project ships as an open
+source fan remake whose players may write code mods, so:
+
+- **Running code is in scope**, but not through the manifest: a code mod is a folder the *server owner* installs and
+  enables, and it runs with the server's own privileges. Treat a downloaded mod as you would a downloaded executable:
+  read it, or only run ones you trust. The release notes and the mod list in `/admin` name what is enabled.
+- **A mod is a server-level switch**, not a per-player one: the owner enables or disables it for the server, and a room
+  host chooses **per room** whether that match uses it (a panel on the create-room screen). A player never installs
+  gameplay content of their own — the server decides what a room runs, and every client is told (the content hash below).
+- **An incompatible pack is not loaded silently**: it is listed as `compatible: false`, and the owner confirms whether to
+  load it (the mod list; until that lands, the server logs it and loads it like a language pack does).
 
 ### Adding a pack type
 
@@ -128,15 +186,19 @@ version"); it is never served and never changes anything.
    the data builder applies; a resource pack: the files exist and are of the allowed kinds), and its documentation
    here.
 
-Things later types must keep (the maintainers' study of mods, 2026-10-07):
+Things later types must keep (the maintainers' study of mods, 2026-10-07; the two marked ⚠ were changed by the owner's
+decision of 2026-10-12, see "Code and gameplay mods" above):
 
 - **Server-side only for gameplay.** A data pack is installed on the server, so every player of a room uses the same
   content and the server can still check or recompute a battle. A player never installs gameplay content of their own.
 - **A content hash in the handshake** before data packs ship (`welcome`, `/healthz`, the BattleSpec), so a client and
-  a server can tell they run the same content, and a "modded" mark in the UI and in bug reports.
-- **No third-party code.** The manifest and its files are data (JSON, images, audio, fonts); a pack type that runs code
-  is a separate decision of the owner's.
+  a server can tell they run the same content, and a "modded" mark in the UI and in bug reports. With code mods in
+  scope this is what keeps a room's players on one rule set: the hash has to cover the enabled mods, per room.
+- ⚠ **No third-party code** — *replaced*: code mods are allowed, installed and enabled by the server owner (a pack
+  manifest still never runs anything), and a room host chooses per room whether a match uses a mod.
 - **The golden results stay on the original content**; a pack never changes them.
+- ⚠ **A pack's app range never blocks silently** — *sharpened*: an incompatible pack is flagged `compatible: false` and
+  the owner decides whether to load it, rather than the loader deciding for them.
 
 ## 5. Tools
 

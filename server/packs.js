@@ -26,13 +26,19 @@ export const LANG_DIR = 'i18n';
 /** Largest manifest / UI file read (bytes): a pack file is small text. */
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
 const noop = () => {};
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * @typedef {{ rel: string, abs: string, url: string }} PackFile
  * @typedef {{ id: string, type: string, layout: 'file' | 'folder', where: string, supported: boolean,
- *   manifest: import('../shared/packs.js').PackManifest, files: Record<string, PackFile>, strings?: number }} Pack
+ *   manifest: import('../shared/packs.js').PackManifest, files: Record<string, PackFile[]>, strings?: number,
+ *   overrides?: string[] }} Pack  files: role → its files (one entry for a plain role, a pool for a `many` role);
+ *   overrides: the resource URLs an assets pack rewrites (`files.map`'s keys)
  * @typedef {{ where: string, problems: string[] }} Skipped
  */
+
+/** Largest number of URL rewrites one assets pack may declare (the map is held in memory for the index and the check). */
+const MAX_ASSET_OVERRIDES = 5000;
 
 const isFile = (abs) => { try { return fs.statSync(abs).isFile(); } catch { return false; } };
 const readDirSorted = (dir) => { try { return fs.readdirSync(dir).filter((n) => !n.startsWith('.')).sort(); } catch { return []; } };
@@ -89,10 +95,10 @@ export function scanPacks({ publicDir, dataDir, packsDir }, { app = APP_VERSION 
     const { manifest, problems, warnings: w } = normalizeManifest(r.json._meta, { id: code, type: 'lang', lang: code, app });
     warn(where, w);
     if (!manifest) { skipped.push({ where, problems }); continue; }
-    /** @type {Record<string, PackFile>} */
-    const files = { ui: { rel: name, abs, url: `/${LANG_DIR}/${name}` } };
+    /** @type {Record<string, PackFile[]>} */
+    const files = { ui: [{ rel: name, abs, url: `/${LANG_DIR}/${name}` }] };
     const dataAbs = path.join(dataDir, LANG_DIR, name);
-    if (isFile(dataAbs)) files.data = { rel: name, abs: dataAbs, url: `/data/${LANG_DIR}/${name}` };
+    if (isFile(dataAbs)) files.data = [{ rel: name, abs: dataAbs, url: `/data/${LANG_DIR}/${name}` }];
     found.push({ id: code, type: 'lang', layout: 'file', where, supported: true, manifest, files, strings: countStrings(r.json) });
   }
 
@@ -115,25 +121,50 @@ export function scanPacks({ publicDir, dataDir, packsDir }, { app = APP_VERSION 
       skipped.push({ where, problems: [`type "${manifest.type}" is planned (${kind.summary}), not loaded by this version`] });
       continue;
     }
-    /** @type {Record<string, PackFile>} */
+    /** @type {Record<string, PackFile[]>} */
     const files = {};
     const missing = [];
-    for (const [role, rel] of Object.entries(manifest.files)) {
-      const abs = path.join(dir, ...rel.split('/'));
-      if (!isFile(abs)) missing.push(`files.${role}: ${rel} is missing`);
-      else if (!inside(dir, abs)) missing.push(`files.${role}: ${rel} leads out of the pack folder`);
-      else files[role] = { rel, abs, url: fileUrl(id, rel) };
+    for (const [role, given] of Object.entries(manifest.files)) {
+      const list = (Array.isArray(given) ? given : [given]).map((rel) => {
+        const abs = path.join(dir, ...rel.split('/'));
+        if (!isFile(abs)) missing.push(`files.${role}: ${rel} is missing`);
+        else if (!inside(dir, abs)) missing.push(`files.${role}: ${rel} leads out of the pack folder`);
+        return { rel, abs, url: fileUrl(id, rel) };
+      });
+      files[role] = list;
     }
     if (missing.length) { skipped.push({ where, problems: missing }); continue; }
     /** @type {Pack} */
     const pack = { id, type: manifest.type, layout: 'folder', where, supported: true, manifest, files };
     if (manifest.type === 'lang') {
-      const ui = readJson(files.ui.abs);
+      const ui = readJson(files.ui[0].abs);
       if (ui.error || !ui.json || typeof ui.json !== 'object' || Array.isArray(ui.json)) {
         skipped.push({ where, problems: [`files.ui: ${ui.error || 'not a JSON object of msgid → translation'}`] });
         continue;
       }
       pack.strings = countStrings(ui.json);
+    }
+    if (manifest.type === 'assets') {
+      const map = readJson(files.map[0].abs);
+      const problems = [];
+      /** @type {string[]} */
+      const overrides = [];
+      if (map.error) problems.push(`files.map: ${map.error}`);
+      else if (!isObj(map.json)) problems.push('files.map: not a JSON object of resource URL → file');
+      else {
+        // every value must be one of THIS pack's own media files: only files the manifest names are ever served, so a
+        // map that points anywhere else (another pack, the game's own art, a file that is not in the pool) is refused
+        const pool = new Map((files.media || []).map((f) => [f.url, f.rel]));
+        for (const [key, value] of Object.entries(map.json)) {
+          if (typeof value !== 'string' || !value) { problems.push(`files.map "${key}": the value is not a string`); continue; }
+          if (!key.startsWith('/') || key.startsWith('//')) { problems.push(`files.map "${key}": not a path on this server`); continue; }
+          if (!pool.has(value)) { problems.push(`files.map "${key}": ${value} is not one of this pack's media files`); continue; }
+          overrides.push(key);
+        }
+        if (overrides.length > MAX_ASSET_OVERRIDES) problems.push(`files.map rewrites ${overrides.length} URLs (at most ${MAX_ASSET_OVERRIDES})`);
+      }
+      if (problems.length) { skipped.push({ where, problems }); continue; }
+      pack.overrides = overrides;
     }
     found.push(pack);
   }
@@ -153,6 +184,15 @@ export function scanPacks({ publicDir, dataDir, packsDir }, { app = APP_VERSION 
     if (p.type === 'lang') langs.set(p.manifest.lang, p.where);
     packs.push(p);
   }
+  // two assets packs rewriting the same resource URL: both load (the last id in the index order wins) and it is reported
+  const claimed = new Map();
+  for (const p of packs) {
+    for (const key of p.overrides || []) {
+      const prev = claimed.get(key);
+      if (prev && prev !== p.id) warnings.push({ where: p.where, warning: `"${key}" is already rewritten by ${prev} (this pack wins: the index is sorted by id)` });
+      claimed.set(key, p.id);
+    }
+  }
   return { packs, skipped, warnings };
 }
 
@@ -162,10 +202,16 @@ export function scanPacks({ publicDir, dataDir, packsDir }, { app = APP_VERSION 
  * @param {{ app?: string }} [opts]
  */
 export function packIndexOf(packs, { app = APP_VERSION } = {}) {
-  const entries = packs.filter((p) => p.supported).map((p) => packIndexEntry(p.manifest, {
-    files: Object.fromEntries(Object.entries(p.files).map(([role, f]) => [role, f.url])),
-    strings: p.strings,
-  }));
+  const entries = packs.filter((p) => p.supported).map((p) => {
+    const kind = PACK_TYPES[p.manifest.type];
+    /** @type {Record<string, string | string[]>} */
+    const files = {};
+    for (const [role, list] of Object.entries(p.files)) {
+      if (kind?.files?.[role]?.pool) continue; // a pool's files are served but never listed: the map points at them
+      files[role] = list.length === 1 ? list[0].url : list.map((f) => f.url);
+    }
+    return packIndexEntry(p.manifest, { files, strings: p.strings, overrides: p.overrides?.length });
+  });
   return buildPackIndex(entries, { app });
 }
 
@@ -238,7 +284,7 @@ export function createPackRegistry(dirs, { log = { info: noop, warn: noop }, app
     servable(id, rel) {
       const p = refresh().byId.get(id);
       if (!p || !p.supported || p.layout !== 'folder') return null;
-      for (const f of Object.values(p.files)) if (f.rel === rel) return f.abs;
+      for (const list of Object.values(p.files)) for (const f of list) if (f.rel === rel) return f.abs;
       return null;
     },
   };

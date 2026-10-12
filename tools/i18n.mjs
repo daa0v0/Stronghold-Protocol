@@ -648,7 +648,7 @@ function langPacks(root = ROOT) {
   const byLang = new Map();
   for (const p of scan.packs) {
     if (p.type !== 'lang') continue;
-    byLang.set(p.manifest.lang, { pack: p, json: JSON.parse(readFileSync(p.files.ui.abs, 'utf8')) });
+    byLang.set(p.manifest.lang, { pack: p, json: JSON.parse(readFileSync(p.files.ui[0].abs, 'utf8')) });
   }
   return { byLang, skipped: scan.skipped, warnings: scan.warnings };
 }
@@ -711,7 +711,7 @@ async function cmdCheck(flags) {
       continue;
     }
     const { pack, json } = entry;
-    const where = pack.layout === 'file' ? `public/${LANG_DIR}/${code}.json` : `${pack.where}${pack.files.ui.rel}`;
+    const where = pack.layout === 'file' ? `public/${LANG_DIR}/${code}.json` : `${pack.where}${pack.files.ui[0].rel}`;
     for (const w of warnings) if (w.where === pack.where) console.log(`warning  ${w.where}: ${w.warning}`);
     const r = checkPack(json, used, known);
     const complete = pack.manifest.complete;
@@ -783,7 +783,7 @@ async function cmdTemplate(flags) {
   }
   for (const k of used.keys()) if (!seen.has(k)) { seen.add(k); order.push(k); }
   const target = byLang.get(code);
-  if (target && target.pack.layout !== 'file') throw new Error(`${code} is a folder pack (${target.pack.where}); edit ${target.pack.files.ui.rel} there`);
+  if (target && target.pack.layout !== 'file') throw new Error(`${code} is a folder pack (${target.pack.where}); edit ${target.pack.files.ui[0].rel} there`);
   const fillCode = flags.fill ? canonicalLang(flags.fill) : null;
   if (flags.fill && !byLang.has(fillCode)) throw new Error(`--fill ${flags.fill}: no such language pack`);
   const { json, added, kept } = packTemplate(code, { existing: target ? target.json : null, msgids: order, fill: fillCode ? byLang.get(fillCode).json : null });

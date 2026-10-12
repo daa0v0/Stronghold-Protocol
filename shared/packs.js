@@ -14,7 +14,7 @@
 // Manifest (pack.json, or `_meta` of a single-file language pack; every field but type / lang optional):
 //   id            a folder pack: its folder name; a single-file language pack: its language code (a manifest that names
 //                 another id is reported; the place decides). Letters, digits, '.', '_', '-', ≤ 64; unique across types
-//   type          "lang" (a single-file language pack may leave it out); planned: "assets", "data"
+//   type          "lang", "assets"; planned: "data"
 //   version       the pack's own version (e.g. "1.2.0")
 //   app           the app versions it is made for, a range: ">=0.2.0", ">=0.2.0 <0.3.0", "0.2.x", "^0.2.0", "~0.2.1", "*"
 //                 (a pre-release such as 0.2.0-dev counts as its release). Outside it a language pack still loads —
@@ -22,9 +22,16 @@
 //   name          the pack's name in its own language (a language pack: the language's own name, shown in the menu)
 //   englishName   its English name
 //   authors       a string or a list;  credits  free text;  license  an SPDX id or free text
-//   files         a folder pack: role → path inside the folder (type "lang": { "ui": "ui.json", "data": "data.json" })
+//   files         a folder pack: role → path inside the folder (a role marked `many` takes a list); a `pool` role's
+//                 files are servable but stay out of the index (type "assets": `media`)
 //   …             the type's own fields (type "lang": lang, base, fallback, complete, machineTranslated, numberUnits —
 //                 shared/i18nPacks.js; a machineTranslated that is not a boolean is warned about and reads as false)
+//
+//   An "assets" pack rewrites resource URLs of this server, so it replaces or adds art / audio / fonts without touching
+//   the game's code: `files.map` is `{ "<resource URL>": "<a media file as /packs/<id>/<path>>" }` and the client applies
+//   it to the loaded data/assets.json (docs/PACKS.md §4). A map value that is not a file of the pack's own `media` pool
+//   is a problem, and two packs that map the same URL conflict (the last id in the index order wins; `tools/packs.mjs
+//   check` and the log say so).
 //
 // Index (GET /packs/index.json — the server's live list; `node tools/packs.mjs index` writes packs/index.json for a
 // static host): { version: 1, app: "<the server's app version>", packs: [entry …] } — the packs of supported types,
@@ -44,12 +51,22 @@ export const PACK_INDEX_FILE = 'index.json';
 export const PACKS_URL = '/packs/';
 
 /**
- * @typedef {{ required?: boolean, ext: string[] }} FileRole a role of a folder pack's `files`
+ * @typedef {{ required?: boolean, ext: readonly string[], many?: boolean, pool?: boolean }} FileRole a role of a folder pack's
+ *   `files`: `many` takes a list of paths (a file pool), `pool` keeps those files out of the index (the pack points at
+ *   them itself, so listing every one would only bloat the index)
  * @typedef {{ status: 'supported' | 'planned', summary: string, live?: boolean, files?: Record<string, FileRole> }} PackType
  *   live: a server picks up its changes without a restart (lang: the client loads packs on demand; data will not —
  *   the simulation's data is fixed at start). files: the roles a folder pack of the type names, with the extensions a
  *   server may serve for them (nothing else in a pack folder is ever served)
  */
+
+/** The extensions an `assets` pack's media pool may hold: art, spine models, audio, fonts. */
+export const ASSET_EXTENSIONS = Object.freeze([
+  '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif', '.bmp',
+  '.skel', '.atlas', '.json',
+  '.mp3', '.ogg', '.oga', '.wav', '.m4a', '.aac', '.flac',
+  '.woff2', '.woff', '.ttf', '.otf',
+]);
 
 /** @type {Readonly<Record<string, PackType>>} the pack types (docs/PACKS.md "Adding a pack type") */
 export const PACK_TYPES = Object.freeze({
@@ -57,7 +74,16 @@ export const PACK_TYPES = Object.freeze({
     status: 'supported', live: true, summary: 'a language: UI strings and, optionally, game texts',
     files: Object.freeze({ ui: Object.freeze({ required: true, ext: ['.json'] }), data: Object.freeze({ ext: ['.json'] }) }),
   }),
-  assets: Object.freeze({ status: 'planned', summary: 'art, audio and font replacements, client side' }),
+  assets: Object.freeze({
+    status: 'supported', live: true,
+    summary: 'art, audio and font replacements (client side): a URL map plus the file pool it points at',
+    files: Object.freeze({
+      // { "<resource URL of this server>": "<a file of the pool, as /packs/<id>/<path>>" } — the client rewrites the
+      // loaded asset manifest through it, so every avatar / portrait / spine model / sound the game resolves follows.
+      map: Object.freeze({ required: true, ext: ['.json'] }),
+      media: Object.freeze({ required: true, many: true, pool: true, ext: ASSET_EXTENSIONS }),
+    }),
+  }),
   data: Object.freeze({ status: 'planned', summary: 'data patches the server applies at start' }),
 });
 
@@ -134,7 +160,7 @@ export function appVersionMatches(range, version = APP_VERSION) {
 
 /**
  * @typedef {{ id: string, type: string, name: string, englishName: string, version: string, app: string,
- *   compatible: boolean, authors: string[], credits: string, license: string, files: Record<string, string>,
+ *   compatible: boolean, authors: string[], credits: string, license: string, files: Record<string, string | string[]>,
  *   lang?: string, base?: string|null, fallback?: string[], complete?: boolean, machineTranslated?: boolean,
  *   numberUnits?: string[]|null }} PackManifest
  */
@@ -192,11 +218,21 @@ export function normalizeManifest(raw, ctx) {
   if (ctx.folder && kind && kind.files) {
     const given = isObj(m.files) ? m.files : {};
     for (const [role, spec] of Object.entries(kind.files)) {
-      const rel = given[role];
-      if (rel === undefined || rel === null || rel === '') { if (spec.required) problems.push(`no "files.${role}"`); continue; }
-      if (!isPackPath(rel)) problems.push(`"files.${role}": "${rel}" is not a path inside the pack folder`);
-      else if (!spec.ext.includes(extOf(rel))) problems.push(`"files.${role}" must be a ${spec.ext.join(' / ')} file`);
-      else out.files[role] = rel;
+      const raw = given[role];
+      if (raw === undefined || raw === null || raw === '') { if (spec.required) problems.push(`no "files.${role}"`); continue; }
+      const list = Array.isArray(raw) ? raw : [raw];
+      if (list.length > 1 && !spec.many) { problems.push(`"files.${role}" takes one path, not a list`); continue; }
+      const kept = [];
+      let bad = false;
+      for (const rel of list) {
+        if (!isPackPath(rel)) { problems.push(`"files.${role}": ${JSON.stringify(rel).slice(0, 80)} is not a path inside the pack folder`); bad = true; }
+        else if (!spec.ext.includes(extOf(rel))) { problems.push(`"files.${role}": "${rel}" must be a ${spec.ext.join(' / ')} file`); bad = true; }
+        else kept.push(rel);
+      }
+      if (bad) continue;
+      if (!kept.length) { if (spec.required) problems.push(`no "files.${role}"`); continue; }
+      // a single path keeps the string shape the lang type has always had; a pool is a list
+      out.files[role] = spec.many ? kept : kept[0];
     }
     for (const role of Object.keys(given)) if (!kind.files[role]) warnings.push(`"files.${role}" is not a role of a ${type} pack (ignored)`);
   }
@@ -207,9 +243,11 @@ export function normalizeManifest(raw, ctx) {
 
 /**
  * The index entry of a pack (what a client may know): its manifest without the folder paths, `files` as URLs, plus the
- * type's extras (a language pack: `strings`).
+ * type's extras (a language pack: `strings`; an assets pack: `overrides`, how many resource URLs its map rewrites).
+ * A role marked `pool` (an assets pack's media) stays out: the client never needs those URLs — the map holds them — and
+ * listing every file of a big pack would only bloat an index every visitor fetches.
  * @param {PackManifest} manifest
- * @param {{ files: Record<string, string>, strings?: number }} extra files: role → URL
+ * @param {{ files: Record<string, string | string[]>, strings?: number, overrides?: number }} extra files: role → URL
  */
 export function packIndexEntry(manifest, extra) {
   /** @type {Record<string, unknown>} */
@@ -229,6 +267,7 @@ export function packIndexEntry(manifest, extra) {
     if (manifest.numberUnits) e.numberUnits = manifest.numberUnits;
     e.strings = extra.strings ?? 0;
   }
+  if (manifest.type === 'assets' && Number.isFinite(extra.overrides)) e.overrides = extra.overrides;
   e.files = { ...extra.files };
   return e;
 }
@@ -259,8 +298,14 @@ export function readPackIndex(json, type) {
   for (const e of list) {
     if (!isObj(e) || !isPackId(e.id) || PACK_TYPES[e.type]?.status !== 'supported' || (type && e.type !== type)) continue;
     const files = {};
-    for (const [role, url] of Object.entries(isObj(e.files) ? e.files : {})) if (isLocalUrl(url)) files[role] = url;
+    for (const [role, url] of Object.entries(isObj(e.files) ? e.files : {})) {
+      // a single path (the lang type) or a list (a role a pack names many files for); every URL is checked on its own
+      if (typeof url === 'string') { if (isLocalUrl(url)) files[role] = url; continue; }
+      if (Array.isArray(url)) { const kept = url.filter(isLocalUrl); if (kept.length) files[role] = kept; }
+    }
     if (e.type === 'lang' && (!isLangCode(e.lang) || e.lang === SOURCE_LANG || !files.ui)) continue;
+    // an assets pack without its map does nothing: refuse it here rather than fetch nothing (the lang type's `ui` alike)
+    if (e.type === 'assets' && !files.map) continue;
     out.push({ ...e, files });
   }
   return out;
