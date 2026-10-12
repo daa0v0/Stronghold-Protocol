@@ -30,6 +30,8 @@ import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
 import { contentTagOf } from '../ui/contentPacks.js';
 import { roomContentOk, packRows, codeModRows, roomModsRequest, optionRows, setOptionValue, optionValuesFor } from '../ui/roomMods.js';
+// The game's own settings controls (round switch, range slider, segmented row) so a mod's knobs look like the settings screen.
+import { Toggle, Slider } from '../ui/settings.js';
 import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
 
@@ -267,45 +269,59 @@ function RoomModsDialog({ open, state, entries, isHost, busy, onClose, onApply }
     }
     onApply(roomModsRequest(state.fixed, chosenPacks, chosenCode, options));
   };
-  const segment = (label, value, options, onPick) => html`<div class="dpick" role="group" aria-label=${label}>
-    ${options.map((o) => html`<button key=${String(o.value)} type="button" aria-pressed=${value === o.value ? 'true' : 'false'}
-      class=${`dpick__opt${value === o.value ? ' is-active' : ''}`} disabled=${!isHost || !!busy}
-      onClick=${() => onPick(o.value)}>${o.label}</button>`)}
-  </div>`;
-  const optionRow = (modId, row) => html`<div class="room-modopt" key=${`${modId}:${row.key}`} data-testid=${`mod-opt-${modId}-${row.key}`}>
-    <span class="room-modopt__label">${row.label}${row.set ? html`<span class="t-dim"> · ${t('已设置')}</span>` : null}</span>
-    ${row.type === 'enum' ? segment(row.label, row.value, (row.values || []).map((v) => ({ value: v, label: String(v) })), (v) => changeOption(modId, row.key, v))
-      : row.type === 'boolean' ? segment(row.label, row.value, [{ value: false, label: t('关') }, { value: true, label: t('开') }], (v) => changeOption(modId, row.key, v))
-      : html`<input type="number" class="room-modopt__num" value=${String(row.value)} disabled=${!isHost || !!busy}
-          min=${row.min ?? undefined} max=${row.max ?? undefined} aria-label=${row.label}
-          onChange=${(e) => changeOption(modId, row.key, Number(e.currentTarget.value))} />`}
-    ${row.description ? html`<span class="t-dim room-modopt__desc">${row.description}</span>` : null}
+  /**
+   * One declared option, rendered with the GAME's own settings controls (ui/settings.js): a boolean or a two-value enum is
+   * the round switch, a number is the settings' range slider, and anything longer is its segmented row. A code mod's knob
+   * therefore looks like part of the settings screen, not like a new widget (docs/MODS.md §4.6).
+   */
+  const optionControl = (modId, row) => {
+    const micro = String(row.key).toUpperCase().slice(0, 18);
+    const set = (v) => changeOption(modId, row.key, v);
+    const box = (children, testid) => html`<div key=${`${modId}:${row.key}`} data-testid=${testid}>${children}</div>`;
+    if (row.type === 'boolean') {
+      return box(html`<${Toggle} label=${row.label} micro=${micro} value=${!!row.value} onChange=${set} />`,
+        `mod-opt-${modId}-${row.key}`);
+    }
+    if (row.type === 'number') {
+      const min = Number.isFinite(row.min) ? row.min : 0;
+      const max = Number.isFinite(row.max) ? row.max : Math.max(min + 10, (Number(row.value) || 0) + 10);
+      return box(html`<${Slider} label=${row.label} micro=${micro} icon="signal"
+        value=${max > min ? Math.min(1, Math.max(0, (Number(row.value) - min) / (max - min))) : 0}
+        onInput=${(v01) => set(min + Math.round(v01 * (max - min)))} />`, `mod-opt-${modId}-${row.key}`);
+    }
+    const values = row.values || [];
+    if (values.length === 2) {
+      const [off, on] = values;
+      return box(html`<${Toggle} label=${row.label} micro=${micro} value=${row.value === on}
+        onText=${String(on)} offText=${String(off)} onChange=${(v) => set(v ? on : off)} />`, `mod-opt-${modId}-${row.key}`);
+    }
+    return box(html`<div class="set-row">
+      <span class="set-row__label">${row.label}<${MicroLabel}>${micro}<//></span>
+      <div class="set-seg" role="radiogroup" aria-label=${row.label}>
+        ${values.map((v) => html`<button key=${String(v)} type="button" role="radio" aria-checked=${row.value === v ? 'true' : 'false'}
+          class=${row.value === v ? 'is-on' : ''} disabled=${!isHost || !!busy} onClick=${() => set(v)}>${String(v)}</button>`)}
+      </div>
+    </div>`, `mod-opt-${modId}-${row.key}`);
+  };
+  const groupRow = (label, micro, rows, onToggle) => html`<div class="set-row">
+    <span class="set-row__label">${label}<${MicroLabel}>${micro}<//></span>
+    <div class="set-seg" role="group" aria-label=${label}>
+      ${rows.map((r) => html`<button key=${r.id} type="button" aria-pressed=${r.on ? 'true' : 'false'}
+        class=${r.on ? 'is-on' : ''} disabled=${!isHost || !!busy} title=${r.description || r.name}
+        onClick=${() => onToggle(r.id)}>${r.name}</button>`)}
+    </div>
   </div>`;
   return html`<${Modal} open=${open} onClose=${onClose} title=${t('本局附加内容')} micro="ROOM MODS // PACKS & CODE MODS"
-    class="room-moddlg" actions=${html`
+    width="7.4rem" class="room-moddlg" actions=${html`
       <${Button} variant="secondary" icon="close" data-testid="room-mods-close" onClick=${onClose}>${t('关闭')}<//>
       ${isHost ? html`<${Button} variant="primary" icon="check" data-testid="room-mods-apply" disabled=${!!busy} onClick=${apply}>${t('应用')}<//>` : null}`}>
-    <div class="room-modpick" data-testid="room-modpick">
-      ${packRowList.length ? html`<section>
-        <${MicroLabel} tone="mint">${t('本局内容包')}<//>
-        <div class="dpick" role="group" aria-label=${t('本局内容包')}>
-          ${packRowList.map((r) => html`<button key=${r.id} type="button" aria-pressed=${r.on ? 'true' : 'false'}
-            class=${`dpick__opt${r.on ? ' is-active' : ''}`} disabled=${!isHost || !!busy}
-            title=${r.name} onClick=${() => setPacks(toggle(chosenPacks, r.id))}>${r.name}</button>`)}
-        </div>
-      </section>` : null}
-      ${codeRowList.length ? html`<section>
-        <${MicroLabel} tone="mint">${t('本局代码 mod')}<//>
-        <div class="dpick" role="group" aria-label=${t('本局代码 mod')}>
-          ${codeRowList.map((r) => html`<button key=${r.id} type="button" aria-pressed=${r.on ? 'true' : 'false'}
-            class=${`dpick__opt${r.on ? ' is-active' : ''}`} disabled=${!isHost || !!busy}
-            title=${r.description || r.name} onClick=${() => setCode(toggle(chosenCode, r.id))}>${r.name}</button>`)}
-        </div>
-        ${(state.codeOptions || []).filter((entry) => chosenCode.includes(entry.id) && (entry.options || []).length).map((entry) => html`<div class="room-modopts" key=${entry.id}>
-          ${(entry.options || []).map((o) => optionRow(entry.id, optionRows(entry, changed[entry.id] || {}).find((r) => r.key === o.key)))}
-        </div>`)}
-      </section>` : null}
-      ${isHost ? null : html`<p class="t-dim">${t('由房主选择')}</p>`}
+    <div class="set-list" data-testid="room-modpick">
+      ${packRowList.length ? groupRow(t('本局内容包'), 'PACKS', packRowList, (id) => setPacks(toggle(chosenPacks, id))) : null}
+      ${codeRowList.length ? groupRow(t('本局代码 mod'), 'CODE MODS', codeRowList, (id) => setCode(toggle(chosenCode, id))) : null}
+      ${(state.codeOptions || []).filter((entry) => chosenCode.includes(entry.id) && (entry.options || []).length).map((entry) => html`<div key=${entry.id}>
+        ${(entry.options || []).map((o) => optionControl(entry.id, optionRows(entry, changed[entry.id] || {}).find((r) => r.key === o.key)))}
+      </div>`)}
+      ${isHost ? null : html`<p class="set-hint">${t('由房主选择')}</p>`}
     </div>
   <//>`;
 }

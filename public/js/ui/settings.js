@@ -71,7 +71,11 @@ export const useSettings = () => useStore((s) => s, Object.is, settingsStore);
  */
 export const hotkeyLabelOf = (action) => hotkeyLabel(settingsStore.get().keys?.[action]);
 
-function Slider({ label, micro, value, onInput, icon }) {
+/**
+ * The settings' own range slider (0–1). Exported because the room's mod dialog uses it for a `number` option a code mod
+ * declared — the same control the settings screen uses, so a mod's knob looks like part of the game (docs/MODS.md §4.6).
+ */
+export function Slider({ label, micro, value, onInput, icon }) {
   const pct = Math.round(value * 100);
   return html`<label class="set-row">
     <span class="set-row__label"><${Icon} name=${icon} />${label}<${MicroLabel}>${micro}<//></span>
@@ -81,11 +85,17 @@ function Slider({ label, micro, value, onInput, icon }) {
   </label>`;
 }
 
-function Toggle({ label, micro, value, onChange }) {
+/**
+ * The settings' own switch — a round track with a knob that slides left/right. Exported for the same reason as `Slider`;
+ * `onText`/`offText` let a caller name the two sides instead of the default 开启/关闭 (a two-value mod option, say).
+ */
+export function Toggle({ label, micro, value, onChange, onText = null, offText = null }) {
+  const on = !!value;
+  const side = on ? (onText ?? tc('toggle', '开启')) : (offText ?? tc('toggle', '关闭'));
   return html`<div class="set-row">
     <span class="set-row__label">${label}<${MicroLabel}>${micro}<//></span>
-    <button type="button" class=${`set-toggle${value ? ' is-on' : ''}`} role="switch" aria-checked=${value ? 'true' : 'false'}
-      onClick=${() => onChange(!value)}><i></i><span>${value ? tc('toggle', '开启') : tc('toggle', '关闭')}</span></button>
+    <button type="button" class=${`set-toggle${on ? ' is-on' : ''}`} role="switch" aria-checked=${on ? 'true' : 'false'}
+      onClick=${() => onChange(!on)}><i></i><span>${side}</span></button>
   </div>`;
 }
 
