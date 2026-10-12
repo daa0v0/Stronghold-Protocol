@@ -21,7 +21,8 @@ rooms) and a deterministic battle sim shared by the server and the browser. It a
    revisions and their evidence in `docs/history/`.
 3. The reference for the part you touch: [docs/SIM.md](docs/SIM.md) (battle engine API, hooks, test harness),
    [docs/META.md](docs/META.md) (match flow, shop, protocol), [docs/DATA.md](docs/DATA.md) (generated data),
-   [docs/I18N.md](docs/I18N.md) (interface strings), `server/sim/content/kits/README.md` (operator kits).
+   [docs/I18N.md](docs/I18N.md) (interface strings), [docs/MODS.md](docs/MODS.md) (writing a content pack or a code mod:
+   formats, limits, what a pack can never do), `server/sim/content/kits/README.md` (operator kits).
 
 ## Hard rules
 

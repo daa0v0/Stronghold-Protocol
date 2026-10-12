@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { startServer } from '../server/index.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
-import { ROOM_CAPACITIES } from '../shared/constants.js';
+import { capacityOptions } from '../shared/playerCapacity.js';
+import { useCapacityPack } from './helpers/capacity.js';
+
+useCapacityPack();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Keep prior previews readable while another run writes its own screenshots (Windows image viewers may lock files).
@@ -59,7 +62,7 @@ test('Edge lobby counts, directory join, capacity fallback and no-room feedback 
     assert.match(await page.$eval(selector('online'), (el) => el.textContent), /在线 6/);
     assert.equal(await page.$eval(selector('match-count'), (el) => el.textContent), '1');
     assert.equal(await page.$eval(selector('joinable-count'), (el) => el.textContent), '2');
-    assert.deepEqual(await page.$$eval(`${selector('match-capacity')} option`, (options) => options.map((el) => el.value)), ['', ...ROOM_CAPACITIES.map(String)]);
+    assert.deepEqual(await page.$$eval(`${selector('match-capacity')} option`, (options) => options.map((el) => el.value)), ['', ...capacityOptions().map(String)]);
     for (const viewport of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }]) {
       await page.setViewport(viewport);
       await page.mouse.move(viewport.width - 4, 4); // keep lingering tooltips out of the preview

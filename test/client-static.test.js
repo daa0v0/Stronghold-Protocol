@@ -19,6 +19,11 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { useCapacityPack } from './helpers/capacity.js';
+
+// The client's room-size policy comes from `data/capacity.json`, and this suite drives the screens in Node (no server, so no
+// boot-time pack application): load the shipped policy, or the helpers below would be checked against the upstream baseline.
+useCapacityPack();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');

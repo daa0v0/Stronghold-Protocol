@@ -5,6 +5,10 @@ import { poolGroupSizes, uniteRoundLimit } from '../../shared/playerCapacity.js'
 import { nextUnitePlan, planUnite } from '../../server/match/unite.js';
 import { makeMatch } from './harness.js';
 import { FakeBattle } from './fakeBattle.js';
+import { useCapacityPack } from '../helpers/capacity.js';
+
+// The round limits below follow the 20-player policy, which ships as the data pack packs/capacity-20/ (docs/MODS.md).
+useCapacityPack();
 
 const ids = (players) => players.map((p) => p.playerId);
 const helper = (playerId, props = {}) => ({ playerId, alive: true, left: false, ...props });

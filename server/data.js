@@ -26,14 +26,15 @@ export const DATA_DIR = path.join(ROOT, 'data');
 /**
  * Files the game expects (a warning lists the missing ones).
  *
- * `skins` is the 干员皮肤 catalogue: a table the CLIENT fetches (`public/js/data.js` DATA_FILES) that the simulation never
- * reads. It is listed here because this list is also what a content pack may patch (`server/dataPacks.js` `known`) and
- * what the static handler serves patched — the skins content lives in a data pack now (docs/SKINS.md,
- * `packs/stronghold-skins/`), so `/data/skins.json` has to be patchable and servable like any other table.
+ * `skins` is the 干员皮肤 catalogue and `capacity` is the room-size policy: tables the CLIENT fetches
+ * (`public/js/data.js` DATA_FILES) that the simulation never reads. They are listed here because this list is also what a
+ * content pack may patch (`server/dataPacks.js` `known`) and what the static handler serves patched — both live in data
+ * packs now (`packs/stronghold-skins/`, `packs/capacity-20/`; docs/SKINS.md, docs/MODS.md), so `/data/skins.json` and
+ * `/data/capacity.json` have to be patchable and servable like any other table.
  */
 export const DATA_FILES = Object.freeze([
   'config', 'chess', 'bonds', 'garrisons', 'items', 'bands', 'effects', 'choices',
-  'enemies', 'factions', 'waves', 'stages', 'bosses', 'tokens', 'assets', 'backups', 'skins',
+  'enemies', 'factions', 'waves', 'stages', 'bosses', 'tokens', 'assets', 'backups', 'skins', 'capacity',
 ]);
 
 /**

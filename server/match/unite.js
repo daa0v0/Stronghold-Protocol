@@ -38,7 +38,7 @@
 
 import { buildUniteWave } from './waves.js';
 import { layerGainRoom } from '../../shared/constants.js';
-import { MAX_UNITE_HELPERS, uniteRoundLimit } from '../../shared/playerCapacity.js';
+import { maxUniteHelpers, uniteRoundLimit } from '../../shared/playerCapacity.js';
 
 /**
  * @param {import('./Match.js').Match} m
@@ -128,7 +128,7 @@ export function helperOrder(m, perfects, results) {
   const st = new Map(perfects.map((ps) => [ps.playerId, helperStats(m, ps, results)]));
   const S = (ps) => st.get(ps.playerId);
   const perRound = Math.max(1, Math.min(2, Math.trunc(m.gd.unite.maxHelpers)));
-  const limit = Math.min(MAX_UNITE_HELPERS, perRound * uniteRoundLimit(m.poolGroups?.length));
+  const limit = Math.min(maxUniteHelpers(), perRound * uniteRoundLimit(m.poolGroups?.length));
   const selected = perfects.slice().sort((a, b) => S(b).units - S(a).units || (S(b).active - S(a).active) || S(b).standing - S(a).standing || a.seat - b.seat)
     .slice(0, limit);
   const ordered = [];

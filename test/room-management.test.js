@@ -4,6 +4,10 @@ import { Lobby } from '../server/lobby.js';
 import { SessionRegistry } from '../server/net.js';
 import { validateC2S } from '../shared/protocol.js';
 import { ERR, MAX_SEATS } from '../shared/constants.js';
+import { useCapacityPack } from './helpers/capacity.js';
+
+// This file drives Lobby/Room directly (no server, so no pack application at boot): load the shipped room-size policy.
+useCapacityPack();
 
 /** Keep a running roster observable without timers or battle simulation. */
 class HeldMatch {

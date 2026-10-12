@@ -2,7 +2,8 @@
 // Never broadcasts a complete room.state or match state to directory viewers.
 
 import { randomInt } from 'node:crypto';
-import { ERR, ROOM_CAPACITIES } from '../shared/constants.js';
+import { ERR } from '../shared/constants.js';
+import { capacityAllowed } from '../shared/playerCapacity.js';
 import { LOBBY_PAGE_SIZE, LOBBY_UPDATE_MS } from '../shared/lobbyDiscovery.js';
 import { encode, sendRaw } from './net.js';
 
@@ -158,7 +159,7 @@ export class LobbyDiscovery {
   /** Capacity preference falls back to fastest; ties are random and the join is synchronous. */
   quickMatch(session, { capacity, assetCache } = {}) {
     if (this.lobby.emergency?.active) return fail(ERR.SERVER_EMERGENCY);
-    if (capacity != null && !ROOM_CAPACITIES.includes(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
+    if (capacity != null && !capacityAllowed(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
     const current = this.lobby.roomOf(session);
     if (current?.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
     const admission = this.lobby.assetCacheAdmission(assetCache);

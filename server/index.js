@@ -25,6 +25,8 @@
 import http from 'node:http';
 import { DATA_FILES, getData, loadData } from './data.js';
 import { applyDataPacks, dataPackTag } from './dataPacks.js';
+// 房间人数策略 (docs/MODS.md): a data table the packs produce, applied before the lobby or a match can read it.
+import { applyCapacityRules, capacityOptions, defaultSeats, groupedPoolMinPlayers } from '../shared/playerCapacity.js';
 import { createHash } from 'node:crypto';
 import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket } from './http/websocket.js';
@@ -121,6 +123,13 @@ export async function startServer(opts = {}) {
   const dataPacks = applyDataPacks(baseData, packs.list('data'), { log, known: DATA_FILES });
   const data = dataPacks.tables;
   const dataPackTagValue = dataPackTag(dataPacks, (t) => createHash('sha256').update(t).digest('hex'));
+
+  // 房间人数策略 (docs/MODS.md): which room sizes the lobby offers, its default, and the grouping/unite rules a big room
+  // needs. The base table is the upstream baseline and the shipped 20-player policy is a data pack, so this applies
+  // whatever the packs produced — before the lobby can create a room, and before any match reads the rules.
+  const capacityRules = applyCapacityRules(data.capacity);
+  if (capacityRules.rejected.length) log.warn(`[capacity] 忽略无效字段：${capacityRules.rejected.join(', ')}`);
+  log.info(`[capacity] 房间人数 ${capacityOptions().join('/')}（默认 ${defaultSeats()}，${groupedPoolMinPlayers()} 人起分组）`);
 
   // 代码 mod (docs/PACKS.md §4): a folder under mods/ that the owner installs AND enables. Always scanned (so /admin can
   // say what is there), loaded only when its id is in the settings — a folder dropped in must never run — and loaded here,

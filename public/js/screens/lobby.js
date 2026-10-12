@@ -13,7 +13,9 @@
 
 import { ResumeMatchButton } from '../ui/resumeMatch.js';
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
-import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, DEFAULT_SEATS, ROOM_CAPACITIES, MAX_SPECTATORS, modeIdFor, ERR } from '../../../shared/constants.js';
+import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR } from '../../../shared/constants.js';
+// Room-size policy (docs/MODS.md): what a lobby offers comes from `data/capacity.json`, applied once the table loads.
+import { capacityAllowed, capacityOptions, defaultSeats } from '../../../shared/playerCapacity.js';
 import { html, Button, Icon, MicroLabel, Panel, TextField, PingPill, AvatarFrame, Tooltip, Spinner, DifficultyIcon, doctorNo } from '../ui/components.js';
 import { toast, toastError } from '../ui/toasts.js';
 import { GuideButton } from '../ui/guide.js';
@@ -255,8 +257,8 @@ export function LobbyScreen() {
     return DIFFICULTIES.includes(d) ? d : 'FUNNY';
   });
   const [capacity, setCapacity] = useState(() => {
-    const saved = loadPref('lobby.capacity', DEFAULT_SEATS);
-    return ROOM_CAPACITIES.includes(saved) ? saved : DEFAULT_SEATS;
+    const saved = loadPref('lobby.capacity', defaultSeats());
+    return capacityAllowed(saved) ? saved : defaultSeats();
   });
   const [code, setCode] = useState('');
   /**
@@ -274,7 +276,7 @@ export function LobbyScreen() {
   const discoveryState = useStore((s) => s, shallowEqual, discovery.target);
   const [matchCapacity, setMatchCapacity] = useState(() => {
     const saved = loadPref('lobby.matchCapacity', null);
-    return ROOM_CAPACITIES.includes(saved) ? saved : null;
+    return capacityAllowed(saved) ? saved : null;
   });
   const [recent] = useState(recentRooms);
   const alive = useRef(true);
@@ -418,7 +420,7 @@ export function LobbyScreen() {
         ${roomMode === 'coop' ? html`<div class="capacity-select">
           <div class="capacity-select__label">${t('同盟席位')} <${MicroLabel}>ROOM CAPACITY<//></div>
           <div class="capacity-select__options" role="radiogroup" aria-label=${t('同盟人数上限')}>
-            ${ROOM_CAPACITIES.map((n) => html`<button key=${n} type="button" role="radio" aria-checked=${capacity === n ? 'true' : 'false'}
+            ${capacityOptions().map((n) => html`<button key=${n} type="button" role="radio" aria-checked=${capacity === n ? 'true' : 'false'}
               class=${`capacity-select__opt${capacity === n ? ' is-active' : ''}`} onClick=${() => pickCapacity(n)}>${t('{n} 人', { n })}</button>`)}
           </div>
         </div>` : null}

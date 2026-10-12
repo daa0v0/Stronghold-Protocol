@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ROOM_CAPACITIES } from '../../shared/constants.js';
+import { capacityOptions } from '../../shared/playerCapacity.js';
+import { useCapacityPack } from '../helpers/capacity.js';
+
+// The option list is the pack's policy (packs/capacity-20/, docs/MODS.md), so load it before rendering.
+useCapacityPack();
 import { emptyLobbyDiscovery } from '../../public/js/lobbyDiscovery.js';
 import { Button } from '../../public/js/ui/components.js';
 import { LobbyOnlinePill, LobbyDiscoveryPanel, LobbyRoomRow, LobbyRoomList } from '../../public/js/ui/lobbyDiscovery.js';
@@ -23,7 +27,7 @@ test('preference capacities use the same canonical values as room creation and d
   const nodes = [...walk(panel)];
   const select = nodes.find((n) => n.type === 'select');
   assert.equal(select.props.value, '');
-  assert.deepEqual([...walk(select)].filter((n) => n.type === 'option').map((n) => n.props.value), ['', ...ROOM_CAPACITIES]);
+  assert.deepEqual([...walk(select)].filter((n) => n.type === 'option').map((n) => n.props.value), ['', ...capacityOptions()]);
   select.props.onChange({ currentTarget: { value: '20' } });
   select.props.onChange({ currentTarget: { value: '' } });
   assert.deepEqual(picked, [20, null]);

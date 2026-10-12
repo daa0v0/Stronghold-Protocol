@@ -26,6 +26,11 @@ import { FakeBattle } from './fakeBattle.js';
 import { GEO } from '../../shared/constants.js';
 import { collectViolations } from '../../server/match/invariants.js';
 import { attachSimClients } from './simClient.js';
+import { useCapacityPack } from '../helpers/capacity.js';
+
+// The room-size policy is a data pack (packs/capacity-20/, docs/MODS.md) and a server applies it at boot. The harness talks
+// to the match rules directly, so it loads the policy this repository ships — otherwise it would test the upstream baseline.
+useCapacityPack();
 
 export const DATA = getData({ log: { warn() {}, error() {}, info() {} } });
 

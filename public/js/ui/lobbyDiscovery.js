@@ -1,5 +1,5 @@
 // Presentational lobby discovery controls; admission and ranking are decided by the server.
-import { ROOM_CAPACITIES } from '../../../shared/constants.js';
+import { capacityOptions } from '../../../shared/playerCapacity.js';
 import { t } from '../../../shared/i18n.js';
 import { html, Button, Icon, MicroLabel, Spinner, DifficultyTag, Modal } from './components.js';
 
@@ -71,7 +71,7 @@ export function LobbyDiscoveryPanel({ state, capacity, onCapacity, onOpen, onQui
       <${Button} variant="secondary" size="sm" icon="users" data-testid="lobby-directory-open" disabled=${!connected} onClick=${onOpen}>${t('房间列表')}<//>
       <label class="lobby-discovery__preference" title=${t('优先所选人数，没有空席时匹配其他房间。')}><span>${t('房间偏好')}</span>
         <select value=${capacity || ''} disabled=${busy || !connected} data-testid="lobby-match-capacity" onChange=${(e) => onCapacity(e.currentTarget.value ? Number(e.currentTarget.value) : null)}>
-          <option value="">${t('不限人数')}</option>${ROOM_CAPACITIES.map((n) => html`<option key=${n} value=${n}>${t('优先 {n} 人房', { n })}</option>`)}
+          <option value="">${t('不限人数')}</option>${capacityOptions().map((n) => html`<option key=${n} value=${n}>${t('优先 {n} 人房', { n })}</option>`)}
         </select>
       </label>
       <${Button} variant="primary" size="sm" iconRight="chevrons" data-testid="lobby-quick-match" loading=${busy} disabled=${!connected} onClick=${onQuickMatch}>${t('最快匹配')}<//>

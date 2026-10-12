@@ -12,9 +12,13 @@ export const DEV_BUILD = /-dev$/.test(APP_VERSION);
 
 /** Four players remain the baseline for card-pool groups and hidden-core layers. Capacity includes humans and AI. */
 export const BASE_SEATS = 4;
+/**
+ * The structural ceiling: what the frozen v1 wire can carry, what the simulation can run and what the renderer can draw.
+ * This is a CAPABILITY, not a policy — a pack cannot change it (docs/MODS.md). Which room sizes a lobby offers, its
+ * default, and the grouping/unite rules that follow from a bigger room live in shared/playerCapacity.js and ship as the
+ * data table `data/capacity.json`.
+ */
 export const MAX_SEATS = 20;
-export const DEFAULT_SEATS = 8;
-export const ROOM_CAPACITIES = Object.freeze([4, 8, 10, 16, 20]);
 /** One independent 机变 page per fixed group; card indexes are local to its six positions. */
 export const MAX_DRAFT_CARDS = 6;
 /**

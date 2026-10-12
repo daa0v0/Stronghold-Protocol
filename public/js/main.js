@@ -39,7 +39,8 @@ import { EmergencyBanner } from './ui/emergencyBanner.js';
 import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
 import { net, identity, NetError } from './net.js';
 import { store, useStore, emptyMatch, selectRoute, sessionResetNotice, isSpectating, emergencyActive } from './store.js';
-import { data } from './data.js';
+import { data, onManifest } from './data.js';
+import { applyCapacityRules } from '../shared/playerCapacity.js';
 import { GAME_FILES } from './ui/gameComponents.js';
 import { TitleScreen, sanitizeName } from './screens/title.js';
 import { LobbyScreen, rememberRoom, parseRoomParam } from './screens/lobby.js';
@@ -423,6 +424,14 @@ async function boot() {
   // GET /healthz.mods — what 设置 → 问题反馈 shows and a bug report carries (ui/contentPacks.js). The entries reach the
   // store as well, so the create-room panel (screens/lobby.js) can offer the packs once the index has arrived.
   installContentPacks().ready.then(() => store.set({ packEntries: contentEntries() }));
+  // 房间人数策略 (docs/MODS.md): the lobby's offered room sizes and defaults come from data/capacity.json, which a data pack
+  // may patch — the server serves the patched table, and this applies whatever it receives. Applied on every load of that
+  // table (so a server whose packs changed is picked up on the next page load) and before the lobby can be rendered.
+  onManifest('capacity', (json) => {
+    const applied = applyCapacityRules(json);
+    if (applied.rejected.length) console.warn('[capacity] ignored', applied.rejected.join(', '));
+  });
+  data.load('capacity').catch(() => {});
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).
   installAudio({ getManifest: () => data.get('assets'), subscribe: store.subscribe, getState: store.get, selectRoute, settings: settingsStore.get() });

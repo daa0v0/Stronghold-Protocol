@@ -64,5 +64,6 @@ the server down.
 read and write its files, use its network, see every player. The loader gives you an explicit switch and an honest report;
 it cannot make third-party code safe.
 
-Details and the owner's decisions: [docs/PACKS.md](../docs/PACKS.md) §4 "Code and gameplay mods" and
-[docs/ADMIN.md](../docs/ADMIN.md) §5.
+The full author's manual — both kinds of mod, every field and limit, what a mod can never do, testing and shipping:
+[docs/MODS.md](../docs/MODS.md). Details and the owner's decisions: [docs/PACKS.md](../docs/PACKS.md) §4 "Code and gameplay
+mods" and [docs/ADMIN.md](../docs/ADMIN.md) §5.

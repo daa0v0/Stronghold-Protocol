@@ -48,6 +48,10 @@ export const DATA_FILES = Object.freeze({
   // 干员皮肤 (docs/SKINS.md): the catalogue of every skin the project knows — ids, names, series, no URLs. What is
   // actually INSTALLED lives in assets.json (chars[charId].skins); ui/skins.js marks which of these is which.
   skins: 'skins.json',
+  // 房间人数策略 (docs/MODS.md, shared/playerCapacity.js): which room sizes a lobby offers, its default, and the grouping
+  // and unite rules a big room needs. The upstream baseline ships here; the 20-player policy is the data pack
+  // packs/capacity-20/, and the server serves whichever the packs produced.
+  capacity: 'capacity.json',
   // 补位 stand-ins (DATA.md §18): the bodies the 干员持有 screen, the cards and the detail card compose (shared/standIn.js)
   backups: 'backups.json',
   // Optional art extracted from a local game client (DESIGN §13): { groups: { '<subdir>': { name: { path, w, h } } } }.

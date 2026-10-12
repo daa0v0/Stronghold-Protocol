@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { DATA, makeMatch, give } from './harness.js';
 import { poolGroupSizes, poolCopyScale } from '../../shared/playerCapacity.js';
 import { makeCtx } from '../../server/match/effectsMeta.js';
+import { useCapacityPack } from '../helpers/capacity.js';
+
+// These cases are the 20-player policy, which ships as the data pack packs/capacity-20/ (docs/MODS.md).
+useCapacityPack();
 
 const GROUP_CASES = [[1, [1]], [2, [2]], [3, [3]], [4, [4]], [5, [5]], [6, [3, 3]], [7, [4, 3]],
   [8, [4, 4]], [9, [4, 5]], [10, [4, 3, 3]], [11, [4, 4, 3]], [12, [4, 4, 4]], [13, [5, 4, 4]],

@@ -12,6 +12,10 @@ downloads failed on this machine unless `--allow-shrink` (or `--prune`) is passe
 (docs/SKINS.md §2): `tools/skins-pack.mjs` moves content into that pack (`--migrate`) or merges a source manifest into it
 (`--from=`), and leaves the base tables clean — a file without skins and an empty catalogue — so the pack is what a server
 serves. `node tools/skins-pack.mjs --check` fails if the base tables carry skin content again.
+`data/capacity.json` is the **room-size baseline** (upstream: four players, one pool) and is owned by
+`tools/capacity.mjs`: `--write` regenerates it from `CAPACITY_BASELINE` in `shared/playerCapacity.js`, `--check` fails when
+the file drifted or when the shipped policy pack `packs/capacity-20/` no longer applies cleanly (docs/MODS.md,
+docs/PLAYER_CAPACITY.md).
 
 ```
 node tools/build-data.mjs              # build (downloads missing official files into .cache/gamedata/)

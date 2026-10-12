@@ -2,8 +2,12 @@
 
 A **content pack** is add-on content a server picks up from a folder: a manifest plus its files. The owner's decision of
 2026-10-07 made the language pack the first type of one general mechanism, so that later resource packs (art, audio,
-fonts) and server-side data packs reuse the same manifest, registry and index instead of each inventing its own. In
-0.2.0 one type loads, **`lang`** (a language: docs/I18N.md "Adding a language"); `assets` and `data` are planned.
+fonts) and server-side data packs reuse the same manifest, registry and index instead of each inventing its own. Three
+types load: **`lang`**, **`assets`** and **`data`** (§4), and two of them ship with the repository as worked examples
+(`packs/stronghold-skins/`, `packs/capacity-20/`).
+
+**Writing one?** This file is the mechanism and the design record; the author's manual — which kind to pick, every field
+and limit, the patch format, what a pack can never do, testing and shipping — is [MODS.md](MODS.md).
 
 | File | Role |
 |---|---|

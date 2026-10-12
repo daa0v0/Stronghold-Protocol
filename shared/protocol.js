@@ -1,7 +1,10 @@
 // Normative message catalogue (DESIGN §8). Used by server (validation) and client (building requests).
 // Every client→server message is `{ t, rid?, ...fields }`. Unknown `t` or invalid fields ⇒ ERR.BAD_MSG.
 
-import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, ROOM_CAPACITIES, MAX_DRAFT_CARDS, EMOTES, GEO } from './constants.js';
+import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, MAX_DRAFT_CARDS, EMOTES, GEO } from './constants.js';
+// The room sizes a lobby offers are POLICY (`data/capacity.json`, docs/MODS.md): the validators ask the live rules, so a
+// pack that changes the offered sizes changes what the protocol accepts — on the server and in the browser alike.
+import { capacityAllowed } from './playerCapacity.js';
 import { isDroppableChess } from './standIn.js';
 import { diySlotIds, validateDiyPicks } from './diy.js';
 import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT } from './potential.js';
@@ -425,14 +428,14 @@ export const C2S = {
   // Lightweight directory subscription; only the opened list carries one bounded page of room summaries.
   'lobby.watch': { on: isBool, list: isBool, page: (v) => isInt(v, 0, 1e6), $optional: ['list', 'page'] },
   // Admission metadata uses the existing wire-v1 extension slot; published position layouts stay unchanged.
-  'lobby.quickMatch': { capacity: (v) => ROOM_CAPACITIES.includes(v), assetCache: isAssetCacheReadiness, $optional: ['capacity', 'assetCache'] },
-  'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), capacity: (v) => ROOM_CAPACITIES.includes(v),
+  'lobby.quickMatch': { capacity: (v) => capacityAllowed(v), assetCache: isAssetCacheReadiness, $optional: ['capacity', 'assetCache'] },
+  'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), capacity: (v) => capacityAllowed(v),
     assetCache: isAssetCacheReadiness, mods: isModSelection, $optional: ['capacity', 'assetCache', 'mods'] },
   'room.join': { code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v), assetCache: isAssetCacheReadiness, $optional: ['assetCache'] },
   'room.leave': {},
   'room.ready': { ready: isBool },
   'room.setDifficulty': { difficulty: (v) => DIFFICULTIES.includes(v) },
-  'room.setCapacity': { capacity: (v) => ROOM_CAPACITIES.includes(v) },
+  'room.setCapacity': { capacity: (v) => capacityAllowed(v) },
   // Upstream compatibility: this branch exposes the manual-human-first rule as fixed on; disabling is refused.
   'room.setAiPicksLast': { on: isBool },
   'room.addBot': {},

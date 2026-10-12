@@ -3,12 +3,17 @@ import assert from 'node:assert/strict';
 import { startServer } from '../server/index.js';
 import { StubMatch } from '../server/match/StubMatch.js';
 import { TestClient } from './helpers/wsClient.js';
-import { ERR, ROOM_CAPACITIES } from '../shared/constants.js';
+import { ERR } from '../shared/constants.js';
+import { capacityOptions } from '../shared/playerCapacity.js';
 import { validateC2S } from '../shared/protocol.js';
+import { useCapacityPack } from './helpers/capacity.js';
 import { LobbyDiscovery, compareRoomSummaries, roomSummary } from '../server/lobbyDiscovery.js';
 import { Lobby, Room } from '../server/lobby.js';
 import { SessionRegistry } from '../server/net.js';
 import { LOBBY_PAGE_SIZE, LOBBY_UPDATE_MS } from '../shared/lobbyDiscovery.js';
+
+// The offered room sizes come from the shipped policy pack (docs/MODS.md); load it before any assertion about them.
+useCapacityPack();
 
 /** Direct lobby harness: real seats and registry, controllable directory timer, no sockets/servers. */
 function harness(t, chooseIndex = () => 0) {
@@ -48,7 +53,7 @@ test('lobby discovery messages validate shared capacities and bounded pages', ()
   assert.equal(validateC2S({ t: 'lobby.watch', on: true }), null);
   assert.equal(validateC2S({ t: 'lobby.watch', on: true, list: true, page: 0 }), null);
   assert.equal(validateC2S({ t: 'lobby.watch', on: false }), null);
-  for (const capacity of ROOM_CAPACITIES) assert.equal(validateC2S({ t: 'lobby.quickMatch', capacity }), null);
+  for (const capacity of capacityOptions()) assert.equal(validateC2S({ t: 'lobby.quickMatch', capacity }), null);
   assert.equal(validateC2S({ t: 'lobby.quickMatch' }), null);
   assert.notEqual(validateC2S({ t: 'lobby.watch', on: true, page: -1 }), null);
   assert.notEqual(validateC2S({ t: 'lobby.quickMatch', capacity: 6 }), null);

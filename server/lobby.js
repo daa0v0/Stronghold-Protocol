@@ -100,7 +100,9 @@
 //     a player seat (the seat is kept and given back on resume).
 
 import { randomBytes, randomInt } from 'node:crypto';
-import { ERR, PHASE, DEFAULT_SEATS, ROOM_CAPACITIES, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
+import { ERR, PHASE, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
+// Room-size policy (docs/MODS.md): the lobby offers and defaults come from `data/capacity.json`, applied at boot.
+import { capacityAllowed, defaultSeats } from '../shared/playerCapacity.js';
 import { PACK_TYPES } from '../shared/packs.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
 import { encode, prepareMessage, sendPrepared, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
@@ -199,7 +201,7 @@ function freezeSkins(skins, getChess) {
 /** One room: configurable player seats, host, difficulty, optional running match. */
 export class Room {
   /** @param {string} code @param {'solo'|'coop'} mode @param {string} difficulty @param {number} now */
-  constructor(code, mode, difficulty, now, capacity = DEFAULT_SEATS) {
+  constructor(code, mode, difficulty, now, capacity = defaultSeats()) {
     this.code = code;
     this.mode = mode;
     this.difficulty = difficulty;
@@ -558,9 +560,9 @@ export class Lobby {
     return { t: 'room.mods', code: room.code, mods: room.mods.slice(), fixed: this.fixedMods(), tag };
   }
 
-  create(session, { mode, difficulty, capacity = DEFAULT_SEATS, assetCache, mods }) {
+  create(session, { mode, difficulty, capacity = defaultSeats(), assetCache, mods }) {
     if (this.emergency.active) return fail(ERR.SERVER_EMERGENCY);
-    if (!ROOM_CAPACITIES.includes(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
+    if (!capacityAllowed(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
     const modsCheck = this.checkMods(mods);
     if (!modsCheck.ok) return modsCheck;
     const cur = this.roomOf(session);
@@ -702,7 +704,7 @@ export class Lobby {
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
-    if (room.mode === 'solo' || !ROOM_CAPACITIES.includes(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
+    if (room.mode === 'solo' || !capacityAllowed(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
     if (room.seats.some((s, i) => s && i >= capacity)) return fail(ERR.BAD_TARGET, 'occupied seat outside requested capacity');
     if (room.capacity === capacity) return OK;
     this.dropReplay(room, session.playerId);

@@ -13,7 +13,9 @@
 // Texts go through t() (docs/I18N.md).
 
 import { useEffect, useRef, useState } from '../../vendor/hooks.module.js';
-import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, DEFAULT_SEATS, ROOM_CAPACITIES, MAX_SPECTATORS } from '../../../shared/constants.js';
+import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, MAX_SPECTATORS } from '../../../shared/constants.js';
+// Room-size policy (docs/MODS.md): the offered sizes and the default come from `data/capacity.json`.
+import { capacityOptions, defaultSeats } from '../../../shared/playerCapacity.js';
 import {
   html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyTag, DifficultyIcon, Tooltip, confirmDialog, doctorNo,
 } from '../ui/components.js';
@@ -38,7 +40,7 @@ import { t, tc } from '../../../shared/i18n.js';
  */
 export function normalizeSeats(room) {
   const src = Array.isArray(room?.seats) ? room.seats : [];
-  const requested = Number.isInteger(room?.capacity) ? room.capacity : src.length || DEFAULT_SEATS;
+  const requested = Number.isInteger(room?.capacity) ? room.capacity : src.length || defaultSeats();
   const cap = room?.mode === 'solo' ? 1 : Math.max(1, Math.min(MAX_SEATS, requested));
   const out = [];
   for (let i = 0; i < cap; i++) {
@@ -232,7 +234,7 @@ function CapacityPicker({ room, facts, busy, onPick }) {
   return html`<div class="room-capacity" aria-label=${t('同盟席位')}>
     <span class="room-capacity__label">${t('人数上限')} <b class="num">${capacity}</b> ${t('人')}</span>
     ${facts.isHost ? html`<div class="room-capacity__options" role="radiogroup" aria-label=${t('调整同盟人数上限')}>
-      ${ROOM_CAPACITIES.map((n) => html`<button key=${n} type="button" role="radio" aria-checked=${capacity === n ? 'true' : 'false'}
+      ${capacityOptions().map((n) => html`<button key=${n} type="button" role="radio" aria-checked=${capacity === n ? 'true' : 'false'}
         class=${`room-capacity__opt${capacity === n ? ' is-active' : ''}`} disabled=${!!busy || n < minCapacity}
         title=${n < minCapacity ? t('先移除超出席位的玩家') : t('{n} 人房间', { n })}
         onClick=${() => n !== capacity && onPick(n)}>${n}</button>`)}

@@ -146,6 +146,8 @@ npm start          # 启动服务器：http://localhost:3000
 - [docs/DEPLOY-LINUX.md](docs/DEPLOY-LINUX.md) — Linux 服务器部署（systemd、nginx/Caddy、防火墙、升级回滚、排错、上线自检）
 - [docs/ADMIN.md](docs/ADMIN.md) — 运维后台 `/admin`（在线连接、房间与卡池组、实时日志、全服广播、维护模式）
 - [docs/SKINS.md](docs/SKINS.md) — 干员皮肤（本版本相对上游新增）
+- [docs/MODS.md](docs/MODS.md) — **写 mod 的规则与做法**：内容包（`lang`/`assets`/`data`）与代码 mod、字段与上限、能改什么与永远不能改什么、测试与发布；含两个真实范例
+- [docs/PACKS.md](docs/PACKS.md) — 内容包的机制与设计取舍（索引、内容标识、服主开关、每局选择）
 
 Linux 上用 git 部署的话，之后更新只需在服务器上执行 `sudo sh scripts/update-linux.sh`（快进拉取 + 重装生产依赖 + 重启 + 探活）。
 

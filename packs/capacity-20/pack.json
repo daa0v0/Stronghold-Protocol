@@ -1,0 +1,10 @@
+{
+  "type": "data",
+  "name": "20 人同盟",
+  "englishName": "20-player alliance",
+  "version": "1.0.0",
+  "app": ">=0.2.4",
+  "authors": ["Stronghold Protocol"],
+  "description": "把同盟房间的人数上限从上游的 4 人扩展到 4/8/10/16/20，并给出 6 人起的分组、轮次与机变页规则（docs/PLAYER_CAPACITY.md）。关掉它即回到上游基线：只有 4 人房、单池、不分组。",
+  "files": { "patch": "patch.json" }
+}

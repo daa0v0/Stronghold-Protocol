@@ -8,9 +8,15 @@ import { StubMatch } from '../server/match/StubMatch.js';
 import { Lobby } from '../server/lobby.js';
 import { SessionRegistry } from '../server/net.js';
 import { TestClient } from './helpers/wsClient.js';
-import { ROOM_CAPACITIES, DEFAULT_SEATS, MAX_SEATS, MAX_DRAFT_CARDS } from '../shared/constants.js';
+import { MAX_SEATS, MAX_DRAFT_CARDS } from '../shared/constants.js';
+// The 4/8/10/16/20 policy ships as the data pack packs/capacity-20/ (docs/MODS.md); a server applies it at boot, and this
+// file applies it up front so the protocol-boundary test below covers every offered size.
+import { capacityOptions, defaultSeats } from '../shared/playerCapacity.js';
+import { useCapacityPack } from './helpers/capacity.js';
 import { validateC2S } from '../shared/protocol.js';
 import { writeServerSettings } from '../server/serverSettings.js';
+
+useCapacityPack();
 
 async function capacityServer(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-capacity-'));
@@ -24,7 +30,7 @@ async function capacityServer(t) {
 }
 
 test('capacity and high seat/card indexes are bounded at the protocol boundary', () => {
-  for (const capacity of ROOM_CAPACITIES) {
+  for (const capacity of capacityOptions()) {
     assert.equal(validateC2S({ t: 'room.create', mode: 'coop', difficulty: 'HARD', capacity }), null);
     assert.equal(validateC2S({ t: 'room.setCapacity', capacity }), null);
   }
@@ -59,8 +65,8 @@ test('default eight seats, host resizing, occupied trailing seats and a full twe
     const host = await player('Host');
     assert.equal((await host.request({ t: 'room.create', mode: 'coop', difficulty: 'NORMAL' })).t, 'ok');
     let state = await host.waitFor('room.state');
-    assert.equal(state.capacity, DEFAULT_SEATS);
-    assert.equal(state.seats.length, DEFAULT_SEATS);
+    assert.equal(state.capacity, defaultSeats());
+    assert.equal(state.seats.length, defaultSeats());
     const guest = await player('Guest');
     assert.equal((await guest.request({ t: 'room.join', code: state.code })).t, 'ok');
     assert.equal((await guest.request({ t: 'room.setCapacity', capacity: 20 })).code, 'NOT_HOST');

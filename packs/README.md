@@ -6,8 +6,11 @@ restart, no build step. `node tools/packs.mjs list` shows what was found, what w
 exits non-zero on a problem.
 
 Three types load in this version: **`lang`** (a language), **`assets`** (art, models, audio, fonts) and **`data`** (the
-game's data tables). A real one ships with the repository — **`packs/stronghold-skins/`**, the 干员皮肤 content
-([docs/SKINS.md](../docs/SKINS.md) §2) — so you can read a working pack instead of only a sketch.
+game's data tables). Two real ones ship with the repository, so you can read a working pack instead of only a sketch:
+**`packs/stronghold-skins/`**, the 干员皮肤 content ([docs/SKINS.md](../docs/SKINS.md) §2), and **`packs/capacity-20/`**,
+the room-size policy ([docs/MODS.md](../docs/MODS.md), [docs/PLAYER_CAPACITY.md](../docs/PLAYER_CAPACITY.md)). The
+author's manual — which type fits which change, every field and limit, the patch format, testing and shipping — is
+[docs/MODS.md](../docs/MODS.md).
 
 ## `lang` — a language
 
