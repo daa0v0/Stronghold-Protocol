@@ -195,7 +195,15 @@ export async function setup(ctx) {
 | `bandDuplicates` | `false` | 开局选策略（方针）时，同一池组内多人能否选同一个？`false` = 队友已选（`Match.bandTaken` 一名持有者） |
 | `sharedLp` | `null` | 全队共用一条血条？`null` = 每人一条（原版）。否则 `{ mode: 'sum' \| 'max', source: 'band' \| 'lp' }`：血条大小 = 队内所选方针 `totalHp`（`band`）或建池时的当前血量（`lp`）的**总和**或**最高** |
 
-mod 在 `setup(ctx)` 里调用 `setMatchRules({...})`；写错的键会被报告并忽略。
+规则分**两层**，因为一个 mod 是**按服务器加载、按房间生效**的：
+
+- `setMatchRules({...})` 改的是**服务器级**规则（测试与诊断用；写错的键会被报告并忽略）；
+- 每个 mod 在 `setup(ctx)` 里注册一个**按局提供者**，每局创建时问一次，可以回答自己这一局在不在：
+  ```js
+  registerMatchRuleProvider('my-mod', (m) => ({ bandDuplicates: m.modEnabled('my-mod') }));
+  ```
+- `Match.rules` 是两者合并后的结果，也是四个读取方真正读的东西（血量收口、方针抽选、下发视图、审计）。
+  `Match.modEnabled(id)`：房间没有收窄时＝全部启用，收窄了就只看它选中的。
 
 - **`taken` 的形状不变**：`choiceDuplicates` 下它仍然只记录**第一个**持有者，其他人只出现在 `picks` 里——这样已经发布的
   客户端结构不用改，也让"谁先拿的"这个信息保持可读。

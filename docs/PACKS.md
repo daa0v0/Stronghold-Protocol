@@ -270,12 +270,23 @@ The owner decides what the server *may* load ("The owner's switches" above); the
 `room.setMods` changes it later; both accept only packs that change the game, and the room tells every client with
 
 ```
-room.mods { code, mods, fixed, tag }
+room.mods { code, mods, fixed, choosable, codeMods, codeChoices, tag }
 ```
 
 sent right after `room.state` (and after every change to it). `mods` is what this match runs, `fixed` is what it cannot
 drop, and `tag` is the **room's own** content tag — the tag of its subset, not the server's — so a player can tell whether
 the page they loaded still matches the match they are in.
+
+Two rules keep the panel honest about what is actually a choice:
+
+- **A fixed pack is not listed as one.** `fixed` (a type that is not live: its tables were fixed when the process started)
+  cannot be dropped by a room, so the room screen and the lobby log only ever name `choosable` (`mods` minus `fixed`) — a
+  room that narrowed nothing shows no line at all, and `/admin` summarises the fixed packs in one line instead of giving them
+  rows that look clickable.
+- **Code mods travel with the packs.** `codeMods` is what this match runs and `codeChoices` is every code mod the owner
+  ENABLED (id/name/description/version), so the host ticks them per match in the same panel (`room.setMods { mods, codeMods }`)
+  and everyone else sees the same facts read-only (docs/MODS.md §4.6). A code mod is loaded once, server-wide — this is the
+  per-match switch it asks about, and naming one the owner did not enable is refused (`ERR.MODS`).
 
 | Rule | Why |
 |---|---|
