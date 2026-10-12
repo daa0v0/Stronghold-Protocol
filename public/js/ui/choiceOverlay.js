@@ -98,10 +98,7 @@ export function cardPickable(sp, card, { myId, solo, busyIdx = null }) {
   if (!sp || !card) return false;
   if (sp.groupId != null && sp.ownGroupId !== sp.groupId) return false;
   const myTurn = solo || sp.turnPid === myId;
-  // `sp.allowDuplicates` is a mod rule (docs/MODS.md): when the pool is not unique, another player's pick does not make a
-  // card unavailable — it is only shown as already taken.
-  const free = sp.allowDuplicates ? true : !card.takenBy;
-  return myTurn && sp.pickOf.get(myId) == null && free && !card.soldOut && busyIdx == null;
+  return myTurn && sp.pickOf.get(myId) == null && !card.takenBy && !card.soldOut && busyIdx == null;
 }
 
 /** Select a read-only group page while retaining the stage and the viewer's permanent group identity. */

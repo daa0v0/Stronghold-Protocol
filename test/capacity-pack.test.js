@@ -34,7 +34,7 @@ test('the pack ships, is discovered, and is a well-formed data pack', () => {
   assert.equal(entry.type, 'data');
   assert.equal(entry.compatible, true);
   assert.equal(entry.patches, 1, 'one patch entry (it patches the single table `capacity`)');
-  assert.deepEqual(registry.list('data').map((p) => p.id).sort(), [PACK_ID, 'revive-teammate', 'stronghold-skins']);
+  assert.deepEqual(registry.list('data').map((p) => p.id).sort(), [PACK_ID, 'stronghold-skins']);
 });
 
 test('the base table is the upstream baseline, so the pack is what makes this a 20-player server', () => {

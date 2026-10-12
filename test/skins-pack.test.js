@@ -38,7 +38,7 @@ test('the pack ships, is discovered, and is a well-formed data pack', () => {
   assert.equal(entry.compatible, true, 'a pack made for this app version must be compatible');
   assert.equal(entry.patches, 2, 'one patch entry per table it patches (assets and skins)');
   assert.equal(registry.report().skipped.filter((s) => s.where.includes(PACK_ID)).length, 0, 'nothing about it is skipped');
-  assert.deepEqual(registry.list('data').map((p) => p.id), ['capacity-20', 'revive-teammate', PACK_ID], 'the data packs this repository ships');
+  assert.deepEqual(registry.list('data').map((p) => p.id), ['capacity-20', PACK_ID], 'the data packs this repository ships');
 });
 
 test('the base tables carry no skins any more — the pack is not decoration', () => {

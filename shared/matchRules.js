@@ -10,10 +10,10 @@
 // `resetMatchRules()` puts the defaults back (tests).
 //
 // Current rules:
-//   * `choiceDuplicates` (default false) — may two players of one card-pool group pick the SAME 机变 card? The shipped
-//     game says no: within a fixed group every card is unique (`group.taken`). With this true a card stays available after
-//     the first pick; `taken[idx]` keeps naming the FIRST holder, so the wire shape the client already understands does not
-//     change and the client is told to keep such a card pickable (`sp.allowDuplicates`).
+//   * `bandDuplicates` (default false) — may two players of one pool group draft the SAME 开局策略/方针 (芬, 阿米娅,
+//     变形者集群 …)? The shipped game says no: a teammate's pick is marked 队友已选 and cannot be taken again
+//     (`Match.bandTaken`). With this true the whole draft behaves as if nothing were taken — the bot's re-draw, the
+//     timeout/default band, the pick refusal and the invariant audit all ask this one rule.
 //   * `sharedLp` (default null) — one shared health bar for the whole team instead of one per player. `null` = the shipped
 //     game. Otherwise `{ mode: 'sum' | 'max', source: 'band' | 'lp' }`: the bar's size is the SUM or the MAX of the
 //     teammates' chosen bands' `totalHp` (`source: 'band'`, the 方针 a player drafts) or of their health as it stands when
@@ -22,9 +22,9 @@
 //     merged pool of the Final Assault / Hidden Core.
 
 /** The rules as they ship. Kept frozen so a reader cannot mutate the state by accident. */
-export const MATCH_RULE_DEFAULTS = Object.freeze({ choiceDuplicates: false, sharedLp: null });
+export const MATCH_RULE_DEFAULTS = Object.freeze({ bandDuplicates: false, sharedLp: null });
 
-/** @type {{ choiceDuplicates: boolean, sharedLp: null | { mode: 'sum'|'max', source: 'band'|'lp' } }} */
+/** @type {{ bandDuplicates: boolean, sharedLp: null | { mode: 'sum'|'max', source: 'band'|'lp' } }} */
 let rules = { ...MATCH_RULE_DEFAULTS };
 
 /** The live rules (read-only by convention: change them with setMatchRules). */
@@ -56,8 +56,8 @@ export function setMatchRules(patch = {}) {
   const rejected = [];
   const next = { ...rules };
   for (const [key, value] of Object.entries(patch || {})) {
-    if (key === 'choiceDuplicates') {
-      if (typeof value === 'boolean') { next.choiceDuplicates = value; applied.push(key); } else rejected.push(key);
+    if (key === 'bandDuplicates') {
+      if (typeof value === 'boolean') { next.bandDuplicates = value; applied.push(key); } else rejected.push(key);
       continue;
     }
     if (key === 'sharedLp') {

@@ -93,6 +93,19 @@ export function teammateBands(picks, myId) {
 }
 
 /**
+ * What counts as 队友已选 for the viewer. Solo has no teammates, and the `bandDuplicates` mod rule (docs/MODS.md,
+ * shared/matchRules.js) lets several players hold one 方针 — so under it nothing is taken and every gate in this screen
+ * (the selection, the timeout default, the auto-pick) behaves as it does in solo.
+ * @param {{ picks: Map<string, string>, allowDuplicates?: boolean }} draft the normalised draft
+ * @param {string|null} myId @param {boolean} solo
+ * @returns {Map<string, string[]>}
+ */
+export function takenForViewer(draft, myId, solo) {
+  if (solo || draft?.allowDuplicates) return new Map();
+  return teammateBands(draft?.picks, myId);
+}
+
+/**
  * The band the detail pane shows (= the highlighted band a turn that runs out takes): the current one, else my pick,
  * else the band a timeout would give me (timeoutBand: 「华法琳」 while free, else the first free one). When it is my
  * turn and the shown band was taken meanwhile (队友已选), that default instead (confirm would be disabled).
@@ -210,7 +223,9 @@ export function BandDraftScreen() {
   const skipsLeft = draft.skipsLeft.has(myId) ? draft.skipsLeft.get(myId) : (skipped ? 0 : 1);
   const manualTeammateAfter = hasManualTeammateAfter(draft, players, myId);
   const canSkip = !solo && myTurn && skipsLeft > 0 && manualTeammateAfter;
-  const taken = solo ? new Map() : teammateBands(draft.picks, myId);
+  // A mod rule (docs/MODS.md, shared/matchRules.js `bandDuplicates`): with it a teammate holding a 方针 does not make it
+  // 队友已选 — nobody is "taken", so every gate below (selection, timeout default, auto-pick) behaves as in solo.
+  const taken = takenForViewer(draft, myId, solo);
   const pickers = new Map(); // bandId → players
   for (const [pid, bid] of draft.picks) {
     const p = players.find((x) => x.playerId === pid);

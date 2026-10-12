@@ -1,67 +1,84 @@
-// 同策略可复选 — a real, shipped CODE MOD (docs/MODS.md, mods/dup-strategies/).
+// 开局策略可复选 — mods/dup-strategies (docs/MODS.md).
 //
-// The rule it changes is a runtime one (`shared/matchRules.js`): the draft's availability check, the invariant audit and the
-// client view all read it, so this file pins all three — the shipped behaviour, the modded behaviour, and that the mod's own
-// `setup(ctx)` is what flips it (loaded through the real loader, not by calling the setter by hand).
+// The rule is a runtime one (`shared/matchRules.js` `bandDuplicates`) read by `Match.bandTaken`, which is the single gate the
+// whole strategy draft goes through: `pickBand`'s 队友已选 refusal, the bot's re-draw, `_applyBand`'s dedupe, the timeout and
+// departing-seat assignments, and the invariant audit's uniqueness assertion. This file pins both sides of it with a real
+// co-op match, plus that the shipped mod is what flips it (through the real loader, not by calling the setter by hand).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PHASE } from '../../shared/constants.js';
+import { ERR, PHASE } from '../../shared/constants.js';
 import { MATCH_RULE_DEFAULTS, matchRules, resetMatchRules, setMatchRules } from '../../shared/matchRules.js';
 import { loadMods, scanMods } from '../../server/mods.js';
 import { makeMatch, checkInvariants } from './harness.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const silent = { info() {}, warn() {}, error() {} };
+/** 阿米娅 — one of the 开局策略 the user named (芬 = band_bldsk, 变形者集群 = band_duyaoy). */
+const SHARED = 'band_amiya';
 
-/** A four-player co-op sitting in the 机变 draft: 4 players share ONE pool group (grouping starts at six). */
-function draftMatch(seed = 11) {
-  const h = makeMatch({ humans: 4, seed, fake: true }).start().toPrep(1);
-  h.m.enterSpDraft();
-  assert.equal(h.m.phase, PHASE.SP_DRAFT);
-  assert.equal(h.m.sp.groups.length, 1, 'four players share one card pool');
+/** A three-player co-op sitting in the strategy (方针) draft. */
+function bandDraft(seed = 5) {
+  const h = makeMatch({ mode: 'coop', humans: 3, seed }).start();
+  for (const id of ['p_0', 'p_1', 'p_2']) h.m.handle(id, { t: 'g.infoReady' });
+  h.sched.advance(1);
+  assert.equal(h.m.phase, PHASE.BAND_DRAFT);
   return h;
 }
-const twoPickers = (m) => {
-  const g = m.sp.groups[0];
-  assert.ok(g.cards.length >= 1 && g.order.length >= 2, 'a page with two turns');
-  return { g, first: m.players.get(g.order[0]), second: m.players.get(g.order[1]) };
-};
 
-test('shipped behaviour: a card belongs to the one player who took it', () => {
+/** Pick `bandId` for the player whose turn it is. */
+function pickForCurrent(h, bandId) {
+  const pid = h.m.draftTurn();
+  return { pid, res: h.m.handle(pid, { t: 'g.band', bandId }) };
+}
+
+test('shipped behaviour: a strategy a teammate drafted is 队友已选', () => {
   resetMatchRules();
-  const h = draftMatch();
+  const h = bandDraft();
   try {
     const m = h.m;
-    const { g, first, second } = twoPickers(m);
-    assert.equal(matchRules().choiceDuplicates, false);
-    assert.ok(m.pickCard(first, 0).ok);
-    assert.equal(m.spCardAvailable(g.cards[0], g), false, 'the page no longer offers it');
-    assert.ok(!m.pickCard(second, 0).ok, 'and a teammate cannot take it');
-    assert.equal(m.sp.picks[second.playerId], undefined);
-    assert.equal(g.taken[0], first.playerId, 'taken names its one holder');
+    assert.equal(matchRules().bandDuplicates, false);
+    const first = pickForCurrent(h, SHARED);
+    assert.deepEqual(first.res, { ok: true });
+    const second = pickForCurrent(h, SHARED);
+    assert.equal(second.res.error, ERR.BAD_TARGET, '队友已选: no duplicates');
+    assert.equal(m.bandTaken(SHARED, second.pid), true);
+    assert.equal(m.publicView().draft.allowDuplicates, false, 'and the client is told to keep it 队友已选');
     checkInvariants(m);
   } finally { h.m.dispose(); resetMatchRules(); }
 });
 
-test('modded behaviour: two players of one group may hold the same card', () => {
+test('modded behaviour: two players of one group may draft the same 方针', () => {
   resetMatchRules();
-  setMatchRules({ choiceDuplicates: true });
-  const h = draftMatch();
+  setMatchRules({ bandDuplicates: true });
+  const h = bandDraft();
   try {
     const m = h.m;
-    const { g, first, second } = twoPickers(m);
-    assert.ok(m.pickCard(first, 0).ok);
-    assert.equal(m.spCardAvailable(g.cards[0], g), true, 'the card stays on offer');
-    assert.ok(m.pickCard(second, 0).ok, 'the teammate takes the same card');
-    assert.equal(m.sp.picks[first.playerId], 0);
-    assert.equal(m.sp.picks[second.playerId], 0);
-    assert.equal(g.taken[0], first.playerId, 'the wire shape is unchanged: taken names the FIRST holder');
-    assert.equal(g.picks[second.playerId], 0);
-    // The client is told, or it would grey the card out and the mod would be unusable from the UI.
-    assert.equal(m.publicView().sp.allowDuplicates, true);
-    // The audit reads the same rule, so the repository's own verification accepts a modded match.
+    const first = pickForCurrent(h, SHARED);
+    const second = pickForCurrent(h, SHARED);
+    assert.deepEqual(first.res, { ok: true });
+    assert.deepEqual(second.res, { ok: true }, 'the teammate takes the same strategy');
+    assert.equal(m.draft.picks[first.pid], SHARED);
+    assert.equal(m.draft.picks[second.pid], SHARED);
+    assert.equal(m.bandTaken(SHARED, second.pid), false, 'nothing counts as taken');
+    assert.equal(h.ps(first.pid).lp, h.ps(second.pid).lp, 'both hold that strategy, so the same LP');
+    assert.equal(h.ps(first.pid).lp, m.gd.startLp(SHARED));
+    assert.equal(m.publicView().draft.allowDuplicates, true, 'the client is told, or it would mark it 队友已选');
+    checkInvariants(m);
+  } finally { h.m.dispose(); resetMatchRules(); }
+});
+
+test('the automatic assignments stop avoiding a taken strategy too', () => {
+  resetMatchRules();
+  setMatchRules({ bandDuplicates: true });
+  const h = bandDraft();
+  try {
+    const m = h.m;
+    const timeout = m.gd.bandDraft.timeoutBandId;
+    pickForCurrent(h, timeout);
+    assert.equal(m.bandTaken(timeout, 'p_2'), false);
+    assert.equal(m.defaultBand('p_2'), timeout, 'a timed-out turn keeps the official default');
     checkInvariants(m);
   } finally { h.m.dispose(); resetMatchRules(); }
 });
@@ -69,27 +86,26 @@ test('modded behaviour: two players of one group may hold the same card', () => 
 test('the rule is what the shipped mod sets, loaded through the real mod loader', async () => {
   resetMatchRules();
   const scan = scanMods(path.join(ROOT, 'mods'));
-  assert.deepEqual(scan.skipped, [], 'every shipped mod has a valid manifest');
+  assert.deepEqual(scan.skipped, []);
   assert.ok(scan.mods.some((m) => m.id === 'dup-strategies'));
   const runtime = await loadMods(scan.mods, { enabled: ['dup-strategies'], log: silent });
   try {
     assert.deepEqual(runtime.failed, []);
     assert.deepEqual(runtime.loaded.map((m) => m.id), ['dup-strategies']);
-    assert.equal(matchRules().choiceDuplicates, true, 'the mod flipped the rule through its own setup(ctx)');
+    assert.equal(matchRules().bandDuplicates, true, 'the mod set the rule from its own config.json');
   } finally { resetMatchRules(); }
 
-  // Nothing loaded (owner disabled it) => the shipped rule stays.
   const off = await loadMods(scan.mods, { enabled: [], log: silent });
   assert.deepEqual(off.loaded, []);
-  assert.equal(matchRules().choiceDuplicates, false);
+  assert.equal(matchRules().bandDuplicates, false);
 });
 
-test('the rule object validates its input and resets to the shipped behaviour', () => {
+test('the rule validates its input and resets to the shipped behaviour', () => {
   resetMatchRules();
-  assert.deepEqual(setMatchRules({ choiceDuplicates: 'yes' }).rejected, ['choiceDuplicates']);
+  assert.deepEqual(setMatchRules({ bandDuplicates: 'yes' }).rejected, ['bandDuplicates']);
   assert.deepEqual(setMatchRules({ nope: true }).rejected, ['nope']);
-  assert.equal(matchRules().choiceDuplicates, MATCH_RULE_DEFAULTS.choiceDuplicates);
-  setMatchRules({ choiceDuplicates: true });
+  assert.equal(matchRules().bandDuplicates, MATCH_RULE_DEFAULTS.bandDuplicates);
+  setMatchRules({ bandDuplicates: true });
   resetMatchRules();
-  assert.equal(matchRules().choiceDuplicates, MATCH_RULE_DEFAULTS.choiceDuplicates);
+  assert.equal(matchRules().bandDuplicates, MATCH_RULE_DEFAULTS.bandDuplicates);
 });

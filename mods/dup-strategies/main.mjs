@@ -1,8 +1,9 @@
-// mods/dup-strategies/main.mjs — 同一策略可以被多名玩家复选 (docs/MODS.md).
+// mods/dup-strategies/main.mjs — 开局策略（方针）可以被多名玩家重复选择 (docs/MODS.md).
 //
-// The shipped game keeps a card pool unique within a fixed group: `group.taken[card.idx]` records the one player who took
-// a card and `spCardAvailable` refuses it afterwards. This mod flips the rule the draft, its invariant audit and the client
-// view all read (`shared/matchRules.js`), so two players of the same group may hold the same card.
+// The shipped game keeps the 开局策略/方针 draft unique inside a fixed pool group: a teammate's pick is marked 队友已选 and
+// `Match.bandTaken` refuses it afterwards (`pickBand` fails, the bot re-draws, a timed-out turn falls back to a free
+// strategy). This mod flips the one rule all of those readers share (`shared/matchRules.js` `bandDuplicates`), so several
+// players of the same group may draft 芬, 阿米娅, 变形者集群 … together.
 //
 // It is a CODE mod rather than a data pack on purpose: no data table describes how a draft's picks are booked, and a pack
 // can never change behaviour. `config.json` next to this file is the mod's own switch, so an owner can keep the mod
@@ -16,15 +17,16 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** @param {{ id: string, version: string, log: { info: Function, warn: Function } }} ctx */
 export async function setup(ctx) {
-  let config = { choiceDuplicates: true };
+  let config = { bandDuplicates: true };
   try {
     config = { ...config, ...JSON.parse(fs.readFileSync(path.join(HERE, 'config.json'), 'utf8')) };
   } catch (error) {
     ctx.log.warn(`config.json 读取失败，使用默认值：${error.message}`);
   }
-  const { applied, rejected } = setMatchRules({ choiceDuplicates: config.choiceDuplicates !== false });
+  const on = config.bandDuplicates !== false;
+  const { applied, rejected } = setMatchRules({ bandDuplicates: on });
   if (rejected.length) ctx.log.warn(`忽略无效配置：${rejected.join(', ')}`);
-  ctx.log.info(applied.includes('choiceDuplicates') && config.choiceDuplicates !== false
-    ? '机变卡池不再唯一：同组内多名玩家可以选择同一张卡'
-    : '未启用（config.json 的 choiceDuplicates 为 false）');
+  ctx.log.info(applied.includes('bandDuplicates') && on
+    ? '开局策略不再唯一：同一池组内多名玩家可以选择同一个方针'
+    : '未启用（config.json 的 bandDuplicates 为 false）');
 }

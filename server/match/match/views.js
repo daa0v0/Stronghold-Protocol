@@ -145,6 +145,9 @@ export class MatchViews {
       // turnSeconds: the length of a turn (the countdown gauge's total; 0 when untimed) — deadline = turnDeadline
       v.draft = {
         id: d.id,
+        // The draft rule the client has to know about (docs/MODS.md): with `bandDuplicates` a 方针 a teammate already
+        // drafted stays selectable, so the client must not mark it 队友已选. The shipped game sends false.
+        allowDuplicates: matchRules().bandDuplicates,
         groups: d.groups.map((g) => ({
           id: g.id, playerIds: g.playerIds.slice(), order: g.order.slice(),
           turn: g.done ? null : g.order[g.idx] ?? null, picks: { ...g.picks }, skipsLeft: { ...g.skipsLeft },
@@ -158,9 +161,6 @@ export class MatchViews {
       const s = this.sp;
       v.sp = {
         id: s.id,
-        // The draft rule the client has to know about (docs/MODS.md): with `choiceDuplicates` a card another player already
-        // holds stays pickable, so the client must not grey it out. The shipped game sends false and behaves as before.
-        allowDuplicates: matchRules().choiceDuplicates,
         groups: s.groups.map((g) => ({
           id: g.id, playerIds: g.playerIds.slice(), order: g.order.slice(),
           family: g.family, name: g.name, desc: g.desc, eventId: g.eventId,

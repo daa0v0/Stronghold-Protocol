@@ -10,6 +10,7 @@ import { buildNormalWave, buildBossWave } from '../waves.js';
 import { pairPlayers } from '../finalAssault.js';
 import { botPickBand } from '../bot.js';
 import { OK, fail, DELAYS, BAND_TURN_SECONDS } from './common.js';
+import { matchRules } from '../../../shared/matchRules.js';
 
 /** Single-pool diagnostics and old fixtures keep their readable/writable first-group fields. */
 export function installDraftFacade(stage, fields) {
@@ -212,8 +213,13 @@ export class MatchPhases {
    * Research 09 §5 / DESIGN §14 corrections:
    * the strategy draft marks a teammate's pick as 队友已选 and it cannot be chosen again (co-op). The automatic
    * assignments — a turn that runs out and a departing seat — obey the same rule: see timeoutBand / defaultBand.
+   *
+   * A mod rule (docs/MODS.md, shared/matchRules.js `bandDuplicates`) makes the whole draft behave as if nothing were
+   * taken — every reader of this one method (the bot's re-draw, the timeout/default band, `pickBand`'s 队友已选 refusal and
+   * `_applyBand`'s dedupe) follows, so the rule cannot be half-applied.
    */
   bandTaken(bandId, playerId) {
+    if (matchRules().bandDuplicates) return false;
     const picks = this.draftGroup(playerId)?.picks || {};
     for (const [pid, id] of Object.entries(picks)) if (pid !== playerId && id === bandId) return true;
     return false;

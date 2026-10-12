@@ -1,10 +1,10 @@
 {
   "id": "dup-strategies",
-  "name": "同策略可复选",
-  "englishName": "Duplicate strategy picks",
-  "version": "1.0.0",
+  "name": "开局策略可复选",
+  "englishName": "Duplicate strategy (方针) picks",
+  "version": "1.1.0",
   "app": ">=0.2.4",
   "authors": ["Stronghold Protocol"],
-  "description": "同一机变卡池内允许多名玩家选择同一张卡（原本池内每张卡只能被一人选走）。config.json 可开关。",
+  "description": "开局选择策略（方针：芬/阿米娅/变形者集群…）时，同一池组内允许多名玩家选择同一个（原本队友已选的方针不能再选）。config.json 可开关。",
   "entry": "main.mjs"
 }

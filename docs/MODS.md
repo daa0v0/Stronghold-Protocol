@@ -174,8 +174,7 @@ export async function setup(ctx) {
 
 | 目录 | 做什么 | 用到的扩展点 |
 |---|---|---|
-| `mods/dup-strategies/` | **同一机变卡池内多名玩家可选同一张卡**（原版池内唯一）。 | `shared/matchRules.js` 的 `choiceDuplicates` |
-| `mods/revive-teammate/` | 机变里新增一张「**复生协议**」：选择它的人**扣自己 10 点血量，复活一名已被淘汰的队友**（优先最早被淘汰者，按对方方针的 `totalHp` 回来）。卡片随数据包 `packs/revive-teammate/` 下发（见 §4.6）。 | `shared/modContent.js`（注册 `choice:<effectId>`）、`ctx.match`、`Match.revivePlayer()` |
+| `mods/dup-strategies/` | **开局选策略（方针）时，同一池组内多名玩家可以选择同一个**（原版队友已选的方针不能再选）。 | `shared/matchRules.js` 的 `bandDuplicates` |
 | `mods/shared-health-bar/` | **全队共用一条血条**：所有人始终持有同一个血量值，大小可配置为队内所选方针 `totalHp` 的**总和**或**最高**（也可按建池时的当前血量取）。 | `shared/matchRules.js` 的 `sharedLp`、健康值收口 `Match.applyLp()` |
 
 启用方式与任何 mod 一样：`/admin → 代码 mod → 启用`（或 `runtime/server-settings.json` 的 `mods.enabled`），然后**重启**。
@@ -192,7 +191,7 @@ export async function setup(ctx) {
 
 | 规则 | 默认 | 含义 |
 |---|---|---|
-| `choiceDuplicates` | `false` | 同一固定卡池内，多个人能否选同一张机变卡？`false` = 池内唯一（`group.taken` 一名持有者） |
+| `bandDuplicates` | `false` | 开局选策略（方针）时，同一池组内多人能否选同一个？`false` = 队友已选（`Match.bandTaken` 一名持有者） |
 | `sharedLp` | `null` | 全队共用一条血条？`null` = 每人一条（原版）。否则 `{ mode: 'sum' \| 'max', source: 'band' \| 'lp' }`：血条大小 = 队内所选方针 `totalHp`（`band`）或建池时的当前血量（`lp`）的**总和**或**最高** |
 
 mod 在 `setup(ctx)` 里调用 `setMatchRules({...})`；写错的键会被报告并忽略。
@@ -221,12 +220,11 @@ export async function setup(ctx) {
 }
 ```
 
-引擎把 mod 的模块排在自带内容**之后**注册，因此同名键**由 mod 覆盖内置实现**（`registry.register` 是替换）——这就是
-`mods/revive-teammate` 给一张新卡加上行为的全部机制。处理器收到的 `ctx` 与内置内容完全一样，另外多一个 **`ctx.match`**：
-需要访问器没覆盖的服务端状态（例如复活一名队友、读名册）时走这里。
+引擎把 mod 的模块排在自带内容**之后**注册，因此同名键**由 mod 覆盖内置实现**（`registry.register` 是替换）。处理器收到的 `ctx`
+与内置内容完全一样，另外多一个 **`ctx.match`**：需要访问器没覆盖的服务端状态（读名册、改血量）时走这里。
 
 > 一个真实的坑：`ctx.player` **不是**本次钩子的玩家，而是"取另一名玩家的嵌套上下文"的内置访问器（`ctx.player(playerId)`）。
-> 要拿当前玩家，用 `ctx.match.players.get(ctx.playerId)`。`mods/revive-teammate` 就是这么写的。
+> 要拿当前玩家，用 `ctx.match.players.get(ctx.playerId)`。
 
 **③ 复活 API：`Match.revivableTeammates()` / `Match.revivePlayer(playerId, { lp })`**
 
@@ -234,9 +232,9 @@ export async function setup(ctx) {
 `alive` / `eliminatedRound` / 血量、商店（淘汰时被清空，活着的座位必须有）、以及进行中的领袖血池按存活人数重算。
 规则（谁能复活、代价多少、回多少血）属于 mod；状态变更属于核心——一半复活的座位会让名册、视图和不变量审计互相矛盾。
 
-**加一张新卡需要数据包**：卡片本身是数据（`choices.cards.tactic`），客户端也照它渲染，所以 `mods/revive-teammate` 配了
-`packs/revive-teammate/`。注意 **`cards.tactic` 是数组，而合补丁会整体替换数组**：包必须给出**整张列表**，所以它由
-`tools/revive-pack.mjs` 生成（`--write` 重新生成，`--check` 在游戏新增了战术卡时报错，避免手改漂移）。
+**加一张新卡或一个新选择**：卡片本身是数据（例如 `choices.cards.tactic`），客户端也照它渲染。注意 **合补丁会整体替换数组**：
+包要新增一个数组条目就必须给出**整张列表**，所以这类补丁应当由工具从 `data/*.json` 生成（`tools/capacity.mjs` 是现成范例），
+而不是手抄——手抄的那一份会在游戏更新时悄悄过期。
 
 **④ 一处健康值收口：`server/match/match/lp.js`**
 
@@ -279,7 +277,6 @@ node tools/packs.mjs list                 # 找到了哪些包、跳过了哪些
 node tools/packs.mjs check --strict       # 有任何问题就非零退出
 node tools/skins-pack.mjs --check         # 皮肤包的基表是否仍然干净（同一思路的自检工具）
 node tools/capacity.mjs --check           # 人数基线表是否与模块一致、随仓库发布的策略包能否干净地应用
-node tools/revive-pack.mjs --check        # 复活卡的数据包是否与当前 data/choices.json 一致（数组补丁必须整体生成）
 node --test test/capacity-pack.test.js    # 你为这个包写的测试
 node --test test/docs-consistency.test.js test/docs-paths.test.js
 node tools/i18n.mjs check --all --strict  # 如果你加了界面文案
