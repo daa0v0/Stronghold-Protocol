@@ -1,0 +1,10 @@
+{
+  "id": "revive-teammate",
+  "name": "复生协议",
+  "englishName": "Revive a teammate",
+  "version": "1.0.0",
+  "app": ">=0.2.4",
+  "authors": ["Stronghold Protocol"],
+  "description": "机变（战术决策）里选择「复生协议」的玩家，可以消耗自己 10 点血量复活一名已被淘汰的队友。卡片由数据包 packs/revive-teammate 提供，效果由本 mod 注册。config.json 可调代价与复活血量。",
+  "entry": "main.mjs"
+}

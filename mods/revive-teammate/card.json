@@ -1,0 +1,8 @@
+{
+  "effectId": "revive_ally",
+  "name": "复生协议",
+  "desc": "消耗自己 10 点血量，复活一名已被淘汰的队友（优先最早被淘汰的那位）",
+  "kind": "ally",
+  "stageId": null,
+  "team": false
+}

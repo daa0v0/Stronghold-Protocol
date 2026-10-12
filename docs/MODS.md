@@ -175,27 +175,66 @@ export async function setup(ctx) {
 | 目录 | 做什么 | 用到的扩展点 |
 |---|---|---|
 | `mods/dup-strategies/` | **同一机变卡池内多名玩家可选同一张卡**（原版池内唯一）。 | `shared/matchRules.js` 的 `choiceDuplicates` |
+| `mods/revive-teammate/` | 机变里新增一张「**复生协议**」：选择它的人**扣自己 10 点血量，复活一名已被淘汰的队友**（优先最早被淘汰者，按对方方针的 `totalHp` 回来）。卡片随数据包 `packs/revive-teammate/` 下发（见 §4.6）。 | `shared/modContent.js`（注册 `choice:<effectId>`）、`ctx.match`、`Match.revivePlayer()` |
 
 启用方式与任何 mod 一样：`/admin → 代码 mod → 启用`（或 `runtime/server-settings.json` 的 `mods.enabled`），然后**重启**。
 不想要了就删掉目录、或在 `config.json` 里关掉它自己的开关。
 
-### 4.6 可调的规则：`shared/matchRules.js`
+### 4.6 mod 能用的扩展点
 
-`server/sim/` 与 `server/match/` 是普通 ES 模块，**ES 模块的导出不能被外部改写**，所以 mod 不能靠覆盖一个函数来改规则。
-允许 mod 改的规则住在这个模块里，默认值就是游戏本来的行为，而且**所有读取方都问它**（选牌路径、不变量审计、下发给客户端的视图），
-这样规则不可能只生效一半（否则审计会拒绝一局游戏明明打完了的对局）：
+**ES 模块的导出不能被外部改写**，所以 mod 不能靠覆盖一个函数来改规则或加效果。核心为此提供三类入口，默认值都等于游戏本来的行为：
+
+**① 可调的规则：`shared/matchRules.js`**
+
+允许 mod 改的对局规则住在这里，而且**所有读取方都问它**（选牌路径、不变量审计、下发给客户端的视图），这样规则不可能只生效一半
+（否则审计会拒绝一局游戏明明打完了的对局）：
 
 | 规则 | 默认 | 含义 |
 |---|---|---|
 | `choiceDuplicates` | `false` | 同一固定卡池内，多个人能否选同一张机变卡？`false` = 池内唯一（`group.taken` 一名持有者） |
 
-mod 在 `setup(ctx)` 里调用 `setMatchRules({...})`；写错的键会被报告并忽略。两点值得注意：
+mod 在 `setup(ctx)` 里调用 `setMatchRules({...})`；写错的键会被报告并忽略。
 
 - **`taken` 的形状不变**：`choiceDuplicates` 下它仍然只记录**第一个**持有者，其他人只出现在 `picks` 里——这样已经发布的
   客户端结构不用改，也让"谁先拿的"这个信息保持可读。
 - **新字段要在协议守卫里登记**：视图里给客户端的新字段（例如 `m.public.sp.allowDuplicates`，客户端据此不再把已被选走的卡
   灰掉）要在 `test/wire-codec.test.js` 的视图允许清单里显式声明，理由和既有的 `card.soldOut` 一样：v1 之后新增的视图字段
   没有 v1 位置，必须写清楚它是谁加的、为什么。
+
+**② 内容效果：`shared/modContent.js`**
+
+机变卡的效果（`choice:<effectId>`）、kit / trait / effect 这类"内容"由 `server/sim/content/*.js` 注册：每个模块导出
+`registerMeta(registry)`（对局开始前的注册）与/或 `install(battle)`（战斗内）。mod 用同一个形状注册自己：
+
+```js
+import { registerModContent } from '../../shared/modContent.js';
+
+export async function setup(ctx) {
+  registerModContent({
+    name: 'my-effect',
+    registerMeta(registry) {
+      registry.choice('my_effect_id', { onChoicePick(ctx, ev) { /* … */ } });   // 键就是 choice:<id>
+    },
+  });
+}
+```
+
+引擎把 mod 的模块排在自带内容**之后**注册，因此同名键**由 mod 覆盖内置实现**（`registry.register` 是替换）——这就是
+`mods/revive-teammate` 给一张新卡加上行为的全部机制。处理器收到的 `ctx` 与内置内容完全一样，另外多一个 **`ctx.match`**：
+需要访问器没覆盖的服务端状态（例如复活一名队友、读名册）时走这里。
+
+> 一个真实的坑：`ctx.player` **不是**本次钩子的玩家，而是"取另一名玩家的嵌套上下文"的内置访问器（`ctx.player(playerId)`）。
+> 要拿当前玩家，用 `ctx.match.players.get(ctx.playerId)`。`mods/revive-teammate` 就是这么写的。
+
+**③ 复活 API：`Match.revivableTeammates()` / `Match.revivePlayer(playerId, { lp })`**
+
+`eliminate()` 的反面住在核心里（`server/match/match/revive.js`），因为它必须把**所有**认为该座位已出局的读者一起修好：
+`alive` / `eliminatedRound` / 血量、商店（淘汰时被清空，活着的座位必须有）、以及进行中的领袖血池按存活人数重算。
+规则（谁能复活、代价多少、回多少血）属于 mod；状态变更属于核心——一半复活的座位会让名册、视图和不变量审计互相矛盾。
+
+**加一张新卡需要数据包**：卡片本身是数据（`choices.cards.tactic`），客户端也照它渲染，所以 `mods/revive-teammate` 配了
+`packs/revive-teammate/`。注意 **`cards.tactic` 是数组，而合补丁会整体替换数组**：包必须给出**整张列表**，所以它由
+`tools/revive-pack.mjs` 生成（`--write` 重新生成，`--check` 在游戏新增了战术卡时报错，避免手改漂移）。
 
 ## 5. 什么永远做不到（结构性限制）
 
@@ -219,6 +258,7 @@ node tools/packs.mjs list                 # 找到了哪些包、跳过了哪些
 node tools/packs.mjs check --strict       # 有任何问题就非零退出
 node tools/skins-pack.mjs --check         # 皮肤包的基表是否仍然干净（同一思路的自检工具）
 node tools/capacity.mjs --check           # 人数基线表是否与模块一致、随仓库发布的策略包能否干净地应用
+node tools/revive-pack.mjs --check        # 复活卡的数据包是否与当前 data/choices.json 一致（数组补丁必须整体生成）
 node --test test/capacity-pack.test.js    # 你为这个包写的测试
 node --test test/docs-consistency.test.js test/docs-paths.test.js
 node tools/i18n.mjs check --all --strict  # 如果你加了界面文案

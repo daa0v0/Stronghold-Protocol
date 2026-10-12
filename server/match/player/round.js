@@ -72,6 +72,25 @@ export class PlayerRound {
     this.recompute();
   }
 
+  /**
+   * The inverse of `eliminate(round)`, for a CODE MOD that brings a teammate back (docs/MODS.md: mods/revive-teammate).
+   * Only the state that says "this seat is out" is restored — its board, hand and shop were emptied when it was eliminated
+   * and come back empty, which is what the mod's own text promises. A seat that LEFT the match is never revived (the mod
+   * checks that; `left` is not touched here either).
+   * @param {number} lp the health it comes back with (the caller decides: a band's totalHp, or a fraction of it)
+   */
+  revive(lp) {
+    this.alive = true;
+    this.ready = false;
+    this.eliminatedRound = null;
+    if (Number.isFinite(lp)) this.lp = Math.max(1, Math.round(lp));
+    // `eliminate` emptied the shop; a living seat has one, and the invariant audit checks its slot count against the
+    // player's shop level, so coming back has to restore it rather than leave a half-alive seat behind.
+    this.rollShop({ keepFrozen: false });
+    this.recompute();
+    this.dirty();
+  }
+
   recompute() {
     this.deployMap(); // a change of the deploy field (a boss round's prep) marks the legality stale
     if (this._legalityStale) this._evictIllegal();

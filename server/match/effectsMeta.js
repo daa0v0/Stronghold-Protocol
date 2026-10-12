@@ -461,6 +461,10 @@ export function makeCtx(m, ps, source, hook, ev = null) {
   const ctx = {
     hook,
     source,
+    // The match, for CODE MODS (docs/MODS.md §4.6). The shipped content uses the accessors below; this is the documented
+    // way in for a mod that needs state they do not cover (reviving a teammate, say). The player itself is reached through
+    // `ctx.match.players.get(ctx.playerId)` — `ctx.player` is the shipped accessor that builds ANOTHER player's context.
+    match: m,
     playerId: ps.playerId,
     seat: ps.seat,
     name: ps.name,

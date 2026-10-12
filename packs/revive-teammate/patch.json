@@ -1,0 +1,360 @@
+{
+  "choices": {
+    "cards": {
+      "tactic": [
+        {
+          "effectId": "allybuff_select_1",
+          "name": "列装",
+          "desc": "你获得2件随机1阶装备，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_2_1",
+          "name": "斯卡蒂的盟誓",
+          "desc": "你的阿戈尔、突袭和坚守盟约层数+8，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_2_2",
+          "name": "诗怀雅的盟誓",
+          "desc": "你的炎和投资人盟约层数+10，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_2_3",
+          "name": "风笛的盟誓",
+          "desc": "你的维多利亚、远见和不屈盟约层数+8，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_2_4",
+          "name": "银灰的盟誓",
+          "desc": "你的谢拉格、投资人、迅捷盟约层数+8，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_2_5",
+          "name": "莫斯提马的盟誓",
+          "desc": "你的拉特兰、奥术盟约层数+10，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_2_6",
+          "name": "缇缇的盟誓",
+          "desc": "你的萨尔贡、精准盟约层数+10，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_2_7",
+          "name": "玛恩纳的盟誓",
+          "desc": "你的卡西米尔盟约层数+12，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_2_8",
+          "name": "德克萨斯的盟誓",
+          "desc": "你的叙拉古、突袭盟约层数+10，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_3",
+          "name": "财富",
+          "desc": "你获得1资金，若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_4",
+          "name": "补给",
+          "desc": "你接下来的2次刷新变为免费（可叠加），若存在其他队友则他们也获得",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_5",
+          "name": "整备",
+          "desc": "你接下来购买的1件装备变为进阶品质",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_6",
+          "name": "升华",
+          "desc": "你接下来购买的1名干员变为精锐状态",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_7_1",
+          "name": "炎盟约驰援",
+          "desc": "你获得1名炎盟约的随机干员棋子",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_7_2",
+          "name": "谢拉格驰援",
+          "desc": "你获得1名谢拉格盟约的随机干员棋子",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_7_3",
+          "name": "萨尔贡驰援",
+          "desc": "你获得1名萨尔贡盟约的随机干员棋子",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_7_4",
+          "name": "叙拉古驰援",
+          "desc": "你获得1名叙拉古盟约的随机干员棋子",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_7_5",
+          "name": "卡西米尔驰援",
+          "desc": "你获得1名卡西米尔盟约的随机干员棋子",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_7_6",
+          "name": "拉特兰驰援",
+          "desc": "你获得1名拉特兰盟约的随机干员棋子",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_7_7",
+          "name": "维多利亚驰援",
+          "desc": "你获得1名维多利亚盟约的随机干员棋子",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_7_8",
+          "name": "阿戈尔驰援",
+          "desc": "你获得1名阿戈尔盟约的随机干员棋子",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "allybuff_select_11",
+          "name": "自愈",
+          "desc": "你获得：我方单位每次受到伤害时回复50点生命值；若存在其他队友则他们也获得此效果",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_13",
+          "name": "火力",
+          "desc": "你获得：休整期结束时若手牌区至少有3个单位，我方所有干员无视敌人20法术抗性；若存在其他队友则他们也获得此效果",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_14",
+          "name": "征召",
+          "desc": "你获得：开始作战时若场上至少有一行存在3名干员，所有干员的再部署时间-50%；若存在其他队友则他们也获得此效果",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_18",
+          "name": "无瑕",
+          "desc": "你获得：干员在生命值为满时，攻击力、防御力+30%；若存在其他队友则他们也获得此效果",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "allybuff_select_19",
+          "name": "锐利",
+          "desc": "你获得：休整期结束时若手牌区为空，我方所有干员无视敌人30%的防御力；若存在其他队友则他们也获得此效果",
+          "kind": "ally",
+          "stageId": null,
+          "team": true
+        },
+        {
+          "effectId": "enemydebuff_select_1",
+          "name": "排斥：乏力",
+          "desc": "全部敌人获得减益效果：攻击力-5%",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "enemydebuff_select_2",
+          "name": "排斥：脆弱",
+          "desc": "全部敌人获得减益效果：防御力-100",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "enemydebuff_select_3",
+          "name": "排斥：致幻",
+          "desc": "全部敌人获得减益效果：法术抗性-3",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "enemydebuff_select_4",
+          "name": "责罚：乏力",
+          "desc": "精英敌人获得减益效果：攻击力-6%",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "enemydebuff_select_5",
+          "name": "责罚：脆弱",
+          "desc": "精英敌人获得减益效果：防御力-150",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "enemydebuff_select_6",
+          "name": "责罚：致幻",
+          "desc": "精英敌人获得减益效果：法术抗性-5",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "enemydebuff_select_7",
+          "name": "裁决：乏力",
+          "desc": "领袖敌人获得减益效果：攻击力-7%",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "enemydebuff_select_8",
+          "name": "裁决：脆弱",
+          "desc": "领袖敌人获得减益效果：防御力-200",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "enemydebuff_select_9",
+          "name": "裁决：致幻",
+          "desc": "领袖敌人获得减益效果：法术抗性-7",
+          "kind": "enemyDebuff",
+          "stageId": null,
+          "team": false
+        },
+        {
+          "effectId": "map_m01_1",
+          "name": "模拟战场演变·模式一",
+          "desc": "移除场地上全部阻隔工事",
+          "kind": "terrain",
+          "stageId": "act1autochess_m01",
+          "team": false
+        },
+        {
+          "effectId": "map_m02_1",
+          "name": "模拟战场演变·模式二",
+          "desc": "场地上全部阻隔工事变为射击台",
+          "kind": "terrain",
+          "stageId": "act1autochess_m02",
+          "team": false
+        },
+        {
+          "effectId": "map_m02_2",
+          "name": "模拟战场演变·模式三",
+          "desc": "移除场地上全部阻隔工事",
+          "kind": "terrain",
+          "stageId": "act1autochess_m02",
+          "team": false
+        },
+        {
+          "effectId": "map_m03_1",
+          "name": "模拟战场演变·模式四",
+          "desc": "移除场地左侧的阻隔工事",
+          "kind": "terrain",
+          "stageId": "act1autochess_m03",
+          "team": false
+        },
+        {
+          "effectId": "map_m03_2",
+          "name": "模拟战场演变·模式五",
+          "desc": "场地右侧的射击台变为可以部署高台干员和地面干员的地面",
+          "kind": "terrain",
+          "stageId": "act1autochess_m03",
+          "team": false
+        },
+        {
+          "effectId": "map_m04_1",
+          "name": "模拟战场演变·模式六",
+          "desc": "移除场地上全部阻隔工事",
+          "kind": "terrain",
+          "stageId": "act1autochess_m04",
+          "team": false
+        },
+        {
+          "effectId": "map_m06_1",
+          "name": "模拟战场演变·模式八",
+          "desc": "场地中的沙尘暴停止",
+          "kind": "terrain",
+          "stageId": "act1autochess_m06",
+          "team": false
+        },
+        {
+          "effectId": "map_m07_1",
+          "name": "模拟战场演变·模式九",
+          "desc": "场上的树丛全部消失",
+          "kind": "terrain",
+          "stageId": "act1autochess_m07",
+          "team": false
+        },
+        {
+          "effectId": "revive_ally",
+          "name": "复生协议",
+          "desc": "消耗自己 10 点血量，复活一名已被淘汰的队友（优先最早被淘汰的那位）",
+          "kind": "ally",
+          "stageId": null,
+          "team": false
+        }
+      ]
+    }
+  }
+}

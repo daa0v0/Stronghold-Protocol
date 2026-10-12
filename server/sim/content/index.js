@@ -29,6 +29,13 @@
 import { genericKit, genericTalents } from './generic.js';
 import { withUnitLoadouts } from '../simdata.js';
 import { isPotential } from '../../../shared/potential.js';
+import { modContentModules } from '../../../shared/modContent.js';
+
+/**
+ * `[name, module]` pairs for the content CODE MODS registered (shared/modContent.js, docs/MODS.md §4.6). They are appended
+ * after the shipped modules so a mod's registration replaces a built-in one; a name is only used in error messages.
+ */
+const modContentEntries = () => modContentModules().map((mod, i) => [mod.name || `mod-${i + 1}`, mod]);
 
 // Content files are loaded with guarded dynamic imports: a module that fails to load (syntax error, throwing
 // top-level code, missing file) is logged and replaced by an empty module instead of breaking the server.
@@ -257,7 +264,9 @@ export function installContent(battle, { mode = 'full', extra = null } = {}) {
     try { battle._setupUnit(u); } catch (e) { battle._handlerError('setupUnit', u, e); }
   }
   if (mode === 'full') {
-    for (const [name, mod] of MODULES) {
+    // Shipped content first, then whatever a CODE MOD registered (shared/modContent.js): the later registration wins, which
+    // is how a mod overrides a `choice:<id>` handler without patching anything (docs/MODS.md §4.6).
+    for (const [name, mod] of [...MODULES, ...modContentEntries()]) {
       if (typeof mod.install !== 'function') continue;
       try { mod.install(battle); } catch (e) { battle._handlerError(`content:${name}`, null, e); }
     }
@@ -267,9 +276,9 @@ export function installContent(battle, { mode = 'full', extra = null } = {}) {
   }
 }
 
-/** Prep-side registration of every domain module (server boot). */
+/** Prep-side registration of every domain module (server boot), then the CODE MODs' own modules (docs/MODS.md §4.6). */
 export function registerAllMeta(registry) {
-  for (const [name, mod] of MODULES) {
+  for (const [name, mod] of [...MODULES, ...modContentEntries()]) {
     if (typeof mod.registerMeta !== 'function') continue;
     try { mod.registerMeta(registry); } catch (e) { console.error(`[content] ${name}.registerMeta failed:`, e); }
   }
