@@ -6,6 +6,7 @@
 // audit accepting a modded match.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { matchRules, matchRuleProviders, resetMatchRuleProviders, resetMatchRules, setMatchRules } from '../../shared/matchRules.js';
@@ -141,4 +142,42 @@ test('the invariant audit knows the rule: it accepts a shared bar and still chec
     assert.equal(m.teamLp, null, 'and the shipped merged pool is a different thing entirely');
     checkInvariants(m);
   } finally { h.m.dispose(); resetMatchRules(); }
+});
+
+test('the room picks the two knobs per match, above the mod own config.json', async () => {
+  resetMatchRuleProviders();
+  const scan = scanMods(path.join(ROOT, 'mods'));
+  const runtime = await loadMods(scan.mods, { enabled: ['shared-health-bar'], log: silent });
+  try {
+    assert.deepEqual(runtime.failed, []);
+    const mod = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, 'mods', 'shared-health-bar', rel), 'utf8'));
+    assert.deepEqual(Object.keys(mod('mod.json').options).sort(), ['mode', 'source'], 'the mod declares its knobs');
+
+    /** A four-player co-op whose bar was built with the room's own values (no room values = the mod config.json). */
+    const withOptions = (codeOptions) => {
+      const h = makeMatch({ humans: 4, seed: 11, fake: true, codeMods: ['shared-health-bar'], codeOptions }).start();
+      h.toPrep(1);
+      return h;
+    };
+    const cfg = mod('config.json');
+    const def = withOptions(undefined);
+    try {
+      assert.deepEqual(def.m.rules.sharedLp, { mode: cfg.mode, source: cfg.source }, 'no room values: the config.json wins');
+      assert.equal(def.m.alivePlayers()[0].lp, bands(def).reduce((s, v) => s + v, 0));
+    } finally { def.m.dispose(); }
+
+    const max = withOptions({ 'shared-health-bar': { mode: 'max' } });
+    try {
+      assert.deepEqual(max.m.rules.sharedLp, { mode: 'max', source: cfg.source }, 'the room overrides one knob');
+      assert.equal(max.m.alivePlayers()[0].lp, Math.max(...bands(max)), 'the bar is the highest band');
+      assert.deepEqual(lps(max), [lps(max)[0], lps(max)[0], lps(max)[0], lps(max)[0]]);
+      checkInvariants(max.m);
+    } finally { max.m.dispose(); }
+
+    const lp = withOptions({ 'shared-health-bar': { mode: 'sum', source: 'lp' } });
+    try {
+      assert.deepEqual(lp.m.rules.sharedLp, { mode: 'sum', source: 'lp' });
+      checkInvariants(lp.m);
+    } finally { lp.m.dispose(); }
+  } finally { resetMatchRuleProviders(); }
 });

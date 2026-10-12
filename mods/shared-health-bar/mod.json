@@ -2,9 +2,13 @@
   "id": "shared-health-bar",
   "name": "全队共享血条",
   "englishName": "One shared health bar",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "app": ">=0.2.4",
   "authors": ["Stronghold Protocol"],
-  "description": "全队共用一条血条，而不是每人一条。血条大小可配置为队内所选方针 totalHp 的总和（sum）或最高（max），也可按当前血量取（source: lp）。config.json 可调。",
+  "description": "全队共用一条血条，而不是每人一条。血条大小与来源由房主按局选择（总和/最高，按所选方针 totalHp 或按当前血量）。",
+  "options": {
+    "mode": { "type": "enum", "values": ["sum", "max"], "default": "sum", "label": "血条大小", "description": "队内各方针血量相加，或取最高的那一个" },
+    "source": { "type": "enum", "values": ["band", "lp"], "default": "band", "label": "血量来源", "description": "按各自所选方针的 totalHp，或按建池时各自的当前血量" }
+  },
   "entry": "main.mjs"
 }

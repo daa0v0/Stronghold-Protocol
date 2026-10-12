@@ -20,6 +20,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isPackId, isPackPath } from '../shared/packs.js';
 import { ROOT } from './http/config.js';
+import { cleanModOptions } from '../shared/modOptions.js';
 
 export const MOD_MANIFEST = 'mod.json';
 /** The folder the loader reads (never served: server/http/static.js mounts only public/, shared/, sim/ and data/). */
@@ -60,6 +61,8 @@ export function scanMods(dir) {
       continue;
     }
     const problems = [];
+    /** The mod's declared per-match options (shared/modOptions.js), empty when it declares none. */
+    let options = {};
     if (!isObj(manifest)) problems.push(`${MOD_MANIFEST} must be a JSON object`);
     else {
       if (!isPackId(id)) problems.push(`the folder name "${id}" is not a mod id (letters, digits, '.', '_', '-', ≤ 64)`);
@@ -76,13 +79,19 @@ export function scanMods(dir) {
       for (const key of Object.keys(manifest)) {
         // `type` is already a problem above (a pack field in a mod manifest), not an ignored extra: say it once.
         if (key === 'type') continue;
-        if (!['id', 'name', 'englishName', 'description', 'version', 'app', 'authors', 'credits', 'license', 'entry'].includes(key)) {
+        if (!['id', 'name', 'englishName', 'description', 'version', 'app', 'authors', 'credits', 'license', 'entry', 'options'].includes(key)) {
           warnings.push({ where, warning: `"${key}" is not a mod field (ignored)` });
         }
       }
+      // `options` (docs/MODS.md §4.6): the knobs a room may set for one match (shared/modOptions.js). A broken block is a
+      // problem; one broken option is dropped with a warning, so a typo in a knob cannot disable a whole mod.
+      const declared = cleanModOptions(manifest.options);
+      options = declared.options;
+      problems.push(...declared.problems);
+      for (const w of declared.warnings) warnings.push({ where, warning: w });
     }
     if (problems.length) { skipped.push({ where, problems }); continue; }
-    mods.push({ id, dir: path.join(dir, id), manifest, entry: manifest.entry, entryExt: path.extname(manifest.entry).toLowerCase() });
+    mods.push({ id, dir: path.join(dir, id), manifest, entry: manifest.entry, entryExt: path.extname(manifest.entry).toLowerCase(), options });
   }
   if (mods.length > MAX_MODS) {
     const extra = mods.splice(MAX_MODS);
@@ -139,6 +148,8 @@ export function modsReport(scan, { enabled = [] } = {}, runtime = {}) {
     mods: scan.mods.map((m) => ({
       id: m.id, name: m.manifest.name || m.id, englishName: m.manifest.englishName || '',
       description: m.manifest.description || '',
+      // The knobs a room may set for one match (shared/modOptions.js), keyed by option name.
+      options: m.options || {},
       version: m.manifest.version || '', app: m.manifest.app || '',
       entry: m.entry, where: `${MODS_DIR}/${m.id}/`,
       enabled: on.has(m.id), running: loadedIds.has(m.id), error: failedIds.get(m.id) || null,

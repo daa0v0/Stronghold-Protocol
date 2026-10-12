@@ -22,8 +22,21 @@ import { registerMatchRuleProvider } from '../../shared/matchRules.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULTS = { mode: 'sum', source: 'band' };
-/** This mod's id: what `Match.modEnabled` is asked about, and what the room's per-match choice names. */
+/** This mod's id: what `Match.modEnabled` / `Match.modOptions` are asked about, and what the room's per-match choice names. */
 const MOD_ID = 'shared-health-bar';
+
+/**
+ * The rule for one match. The two knobs resolve in the documented order: what the ROOM set for this match
+ * (`Match.modOptions`, the host's choice in the room) → this mod's own `config.json` (the server's default) → the defaults
+ * declared in `mod.json` (mirrored in DEFAULTS).
+ * @param {any} m the match @param {{ mode?: string, source?: string }} config
+ */
+function sharedLpFor(m, config) {
+  const room = typeof m.modOptions === 'function' ? m.modOptions(MOD_ID) : {};
+  const mode = room.mode ?? config.mode ?? DEFAULTS.mode;
+  const source = room.source ?? config.source ?? DEFAULTS.source;
+  return { mode: mode === 'max' ? 'max' : 'sum', source: source === 'lp' ? 'lp' : 'band' };
+}
 
 /** @param {{ id: string, version: string, log: { info: Function, warn: Function } }} ctx */
 export async function setup(ctx) {
@@ -33,10 +46,10 @@ export async function setup(ctx) {
   } catch (error) {
     ctx.log.warn(`config.json 读取失败，使用默认值：${error.message}`);
   }
-  const sharedLp = { mode: config.mode === 'max' ? 'max' : 'sum', source: config.source === 'lp' ? 'lp' : 'band' };
   // PER MATCH, not server-wide: the provider is asked once per match and answers for this mod, so a room that did not pick
-  // it plays the shipped per-seat health (docs/MODS.md §4.6).
-  registerMatchRuleProvider(MOD_ID, (m) => ({ sharedLp: m.modEnabled(MOD_ID) ? sharedLp : null }));
-  const what = config.source === 'lp' ? '当前血量' : '所选方针的 totalHp';
-  ctx.log.info(`全队共享一条血条：本局启用时，大小 = 队内${what} 的${config.mode === 'max' ? '最高值' : '总和'}`);
+  // it plays the shipped per-seat health — and a room that did picks the two knobs itself (docs/MODS.md §4.6).
+  registerMatchRuleProvider(MOD_ID, (m) => ({ sharedLp: m.modEnabled(MOD_ID) ? sharedLpFor(m, config) : null }));
+  const what = (config.source ?? DEFAULTS.source) === 'lp' ? '当前血量' : '所选方针的 totalHp';
+  ctx.log.info(`已启用：本局启用时全队共用一条血条，大小与来源由房主在房间里按局选择`
+    + `（服务器默认 = 队内${what} 的${(config.mode ?? DEFAULTS.mode) === 'max' ? '最高值' : '总和'}）`);
 }

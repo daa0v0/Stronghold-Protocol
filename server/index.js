@@ -146,7 +146,7 @@ export async function startServer(opts = {}) {
   // The code mods the owner enabled, as the lobby needs them: a room may pick any of these for its matches (docs/MODS.md §4.6).
   const enabledCodeMods = modsState.mods
     .filter((m) => m.enabled)
-    .map((m) => ({ id: m.id, name: m.name, englishName: m.englishName, description: m.description, version: m.version }));
+    .map((m) => ({ id: m.id, name: m.name, englishName: m.englishName, description: m.description, version: m.version, options: m.options || {} }));
   const { registry, lobby, network } = createSessionStack(opts, { data, log, packs, codeMods: enabledCodeMods });
   const announcements = createAnnouncementStore({ dir: opts.announcementsDir, root: ROOT, log });
   const announcementNotices = createAnnouncementNoticeMonitor({ store: announcements, network, log });

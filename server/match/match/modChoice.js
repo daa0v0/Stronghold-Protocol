@@ -29,6 +29,16 @@ export class MatchModChoice {
   }
 
   /**
+   * The per-match option values this room set for one code mod (shared/modOptions.js), or an empty object. The room's values
+   * are the TOP layer: a mod merges them over its own `config.json` and over the defaults it declared in `mod.json`.
+   * @param {string} id
+   * @returns {Record<string, any>}
+   */
+  modOptions(id) {
+    return { ...((this.codeOptions || {})[id] || {}) };
+  }
+
+  /**
    * Ask one player a mod's question. An AI seat (or a human under AI 托管) is never asked — it would have to answer itself —
    * and a seat that already has a choice open stays busy, so one prompt at a time.
    * @param {import('../PlayerState.js').PlayerState} ps

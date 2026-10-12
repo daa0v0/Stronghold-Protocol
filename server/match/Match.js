@@ -304,6 +304,12 @@ export class Match {
      * @type {string[]|null}
      */
     this.roomMods = Array.isArray(opts.codeMods) ? opts.codeMods.slice() : null;
+    /**
+     * The per-match option values the room set, `{ [modId]: { [option]: value } }` (shared/modOptions.js) — what
+     * `Match.modOptions(id)` hands a mod, above that mod's own `config.json`.
+     * @type {Record<string, Record<string, any>>}
+     */
+    this.codeOptions = opts.codeOptions && typeof opts.codeOptions === 'object' ? opts.codeOptions : {};
     /** The rules this match runs with: the server-wide ones, then every rule provider's patch (shared/matchRules.js). */
     this.rules = matchRulesFor(this);
     this._progressTimer = null;

@@ -75,6 +75,8 @@ export function makeMatch(o = {}) {
     registry: o.registry,
     // The room's per-match code-mod choice (docs/MODS.md §4.6): undefined = the room did not narrow them.
     codeMods: o.codeMods,
+    // …and the option values it set for them (shared/modOptions.js), which `Match.modOptions` hands a mod.
+    codeOptions: o.codeOptions,
     BattleClass: o.fake ? FakeBattle : undefined,
     battleContent: o.battleContent,
     timerScale: o.timerScale,

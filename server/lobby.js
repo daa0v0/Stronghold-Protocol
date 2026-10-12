@@ -104,6 +104,7 @@ import { ERR, PHASE, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from 
 // Room-size policy (docs/MODS.md): the lobby offers and defaults come from `data/capacity.json`, applied at boot.
 import { capacityAllowed, defaultSeats } from '../shared/playerCapacity.js';
 import { PACK_TYPES } from '../shared/packs.js';
+import { cleanModOptionValues } from '../shared/modOptions.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
 import { encode, prepareMessage, sendPrepared, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
@@ -237,6 +238,12 @@ export class Room {
      * @type {string[]}
      */
     this.codeMods = [];
+    /**
+     * The per-match option values this room set, `{ [modId]: { [option]: value } }` (shared/modOptions.js). Empty means
+     * "whatever each mod's own config.json says".
+     * @type {Record<string, Record<string, any>>}
+     */
+    this.codeModOptions = {};
     /** @type {any} summary passed to onEnd by the last match */
     this.lastSummary = null;
     /**
@@ -550,14 +557,18 @@ export class Lobby {
    * the content packs and for the code mods alike.
    * @param {unknown} mods the content packs
    * @param {unknown} [codeMods] the code mods (docs/MODS.md §4.6; only the enabled ones a room may name)
-   * @returns {{ ok: true, ids: string[], codeIds: string[] } | { error: string, detail?: string }}
+   * @param {unknown} [codeOptions] per-mod option values, `{ [modId]: { [option]: value } }` (shared/modOptions.js)
+   * @returns {{ ok: true, ids: string[], codeIds: string[], codeOptions: Record<string, Record<string, any>> }
+   *   | { error: string, detail?: string }}
    */
-  checkMods(mods, codeMods) {
+  checkMods(mods, codeMods, codeOptions) {
     const ids = [...new Set(this.enabledMods().map((p) => p.id))];
     const enabledCode = this.codeMods.map((m) => m.id);
     const codeIds = this.checkCodeMods(codeMods, enabledCode);
     if (!codeIds.ok) return codeIds;
-    if (mods === undefined || mods === null) return { ok: true, ids, codeIds: codeIds.ids };
+    const opts = this.checkCodeOptions(codeOptions, codeIds.ids);
+    if (!opts.ok) return opts;
+    if (mods === undefined || mods === null) return { ok: true, ids, codeIds: codeIds.ids, codeOptions: opts.values };
     if (!Array.isArray(mods)) return fail(ERR.BAD_MSG, 'mods must be a list of pack ids');
     const known = new Set(ids);
     for (const id of mods) if (!known.has(id)) return fail(ERR.MODS, `${String(id).slice(0, 64)} is not a content pack this server runs`);
@@ -565,7 +576,31 @@ export class Lobby {
       if (!mods.includes(id)) return fail(ERR.MODS, `${id} cannot be turned off for one room: its tables were fixed when the server started`);
     }
     // Keep the canonical order (the registry's), not the order the client listed them in.
-    return { ok: true, ids: ids.filter((id) => mods.includes(id)), codeIds: codeIds.ids };
+    return { ok: true, ids: ids.filter((id) => mods.includes(id)), codeIds: codeIds.ids, codeOptions: opts.values };
+  }
+
+  /**
+   * The per-match option values a room asked for, checked against each mod's OWN declaration (shared/modOptions.js) — the
+   * core never needs to know what a knob means, only that the value fits the type the mod declared. Only a mod the room runs
+   * may carry values, and only its declared options may be named.
+   * @param {unknown} codeOptions
+   * @param {string[]} codeIds the mods this room runs
+   * @returns {{ ok: true, values: Record<string, Record<string, any>> } | { error: string, detail?: string }}
+   */
+  checkCodeOptions(codeOptions, codeIds) {
+    if (codeOptions === undefined || codeOptions === null) return { ok: true, values: {} };
+    if (typeof codeOptions !== 'object' || Array.isArray(codeOptions)) return fail(ERR.BAD_MSG, 'codeOptions must be an object');
+    const byId = new Map(this.codeMods.map((m) => [m.id, m]));
+    const out = {};
+    for (const [modId, values] of Object.entries(codeOptions)) {
+      const mod = byId.get(modId);
+      if (!mod) return fail(ERR.MODS, `${String(modId).slice(0, 64)} is not a code mod this server enabled`);
+      if (!codeIds.includes(modId)) return fail(ERR.MODS, `${modId} is not one of this room's code mods`);
+      const res = cleanModOptionValues(mod.options || {}, values);
+      if (!res.ok) return fail(ERR.MODS, `${modId}: ${res.detail}`);
+      out[modId] = res.values;
+    }
+    return { ok: true, values: out };
   }
 
   /**
@@ -600,6 +635,12 @@ export class Lobby {
       codeChoices: this.codeMods.map((m) => ({
         id: m.id, name: m.name || m.id, englishName: m.englishName || '', description: m.description || '', version: m.version || '',
       })),
+      // The knobs each enabled code mod declares, plus what THIS room set (shared/modOptions.js) — one entry per codeChoice.
+      codeOptions: this.codeMods.map((m) => ({
+        id: m.id,
+        options: Object.values(m.options || {}),
+        values: { ...((room.codeModOptions || {})[m.id] || {}) },
+      })),
       tag,
     };
   }
@@ -616,10 +657,10 @@ export class Lobby {
     return parts.join(' ') || 'none';
   }
 
-  create(session, { mode, difficulty, capacity = defaultSeats(), assetCache, mods, codeMods }) {
+  create(session, { mode, difficulty, capacity = defaultSeats(), assetCache, mods, codeMods, codeOptions }) {
     if (this.emergency.active) return fail(ERR.SERVER_EMERGENCY);
     if (!capacityAllowed(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
-    const modsCheck = this.checkMods(mods, codeMods);
+    const modsCheck = this.checkMods(mods, codeMods, codeOptions);
     if (!modsCheck.ok) return modsCheck;
     const cur = this.roomOf(session);
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
@@ -643,6 +684,7 @@ export class Lobby {
     room.ownerKey = key;
     room.mods = modsCheck.ids;
     room.codeMods = modsCheck.codeIds;
+    room.codeModOptions = modsCheck.codeOptions;
     room.seats[0] = this.humanSeat(0, session);
     room.hostId = session.playerId;
     this.rooms.set(code, room);
@@ -777,19 +819,21 @@ export class Lobby {
    * Host-only: narrow this room's content packs down (docs/PACKS.md §4). Changing what a match runs is as significant as
    * its difficulty, so the other humans are un-readied and have to look again.
    */
-  setMods(session, { mods, codeMods }) {
+  setMods(session, { mods, codeMods, codeOptions }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
-    const check = this.checkMods(mods, codeMods);
+    const check = this.checkMods(mods, codeMods, codeOptions);
     if (!check.ok) return check;
     const packsChanged = check.ids.join('|') !== room.mods.join('|');
     const codeChanged = check.codeIds.join('|') !== (room.codeMods || []).join('|');
-    if (packsChanged || codeChanged) {
+    const optionsChanged = JSON.stringify(check.codeOptions) !== JSON.stringify(room.codeModOptions || {});
+    if (packsChanged || codeChanged || optionsChanged) {
       this.dropReplay(room, session.playerId);
       room.mods = check.ids;
       room.codeMods = check.codeIds;
+      room.codeModOptions = check.codeOptions;
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
       this.log.info(`[lobby] ${room.code} mods → ${this.modsLogLine(room)}`);
       this.broadcastState(room);
@@ -1074,8 +1118,9 @@ export class Lobby {
         // 「AI 队友最后选择」 (GitHub #338): fixed for the match
         aiPicksLast: room.mode !== 'solo' && room.aiPicksLast === true,
         // The code mods this room picked (docs/MODS.md §4.6): a mod is loaded server-wide, and this is what tells it whether
-        // it is on for THIS match (`Match.modEnabled`).
+        // it is on for THIS match (`Match.modEnabled`), plus the option values the room set (`Match.modOptions`).
         codeMods: (room.codeMods || []).slice(),
+        codeOptions: { ...(room.codeModOptions || {}) },
         seats,
         // the spectator seats (header): watched like eliminated players, never players
         spectators: room.spectators.map((s) => s.playerId),
