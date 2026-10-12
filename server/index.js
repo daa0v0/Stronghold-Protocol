@@ -195,6 +195,8 @@ export async function startServer(opts = {}) {
     lobby, network, registry, bandwidthEmergency, assetCache, serverSettings, announcements, packs, settingsDir: serverSettings.dir,
     serverMods: modsState,
     ring: logRing, log, startedAt, build: buildTag,
+    // `adminNow` lets a test move the clock and watch a session expire (docs/ADMIN.md §3); production never sets it.
+    ...(opts.adminNow ? { now: opts.adminNow } : {}),
   });
   const admin = createAdminHandler({ admin: adminService, serveStatic, log });
   requestHandler = createRequestHandler({ serveStatic, announcements, assetCache, admin,

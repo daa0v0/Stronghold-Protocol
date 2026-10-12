@@ -50,6 +50,9 @@ function screen(which) {
   show('screen-login', which === 'login');
   show('dashboard', which === 'dashboard');
   show('btn-logout', which === 'dashboard');
+  // The "you are logged in" note belongs to a session: a refused poll (expired, logged out elsewhere, server restarted)
+  // must take it away with the dashboard, or it would claim a session that no longer exists.
+  show('session-note', which === 'dashboard');
 }
 
 function setState(textValue, cls) {
@@ -58,10 +61,34 @@ function setState(textValue, cls) {
   el.className = 'badge ' + (cls || 'badge--dim');
 }
 
+/**
+ * Blank everything the console renders. A session that ended (expired, revoked, logged out, or the console switched off)
+ * must not leave yesterday's numbers sitting in the DOM behind a hidden panel — hidden is not deleted, and the whole point
+ * of the login is that nothing is readable without it.
+ */
+function clearConsole() {
+  for (const id of ['stat-conn', 'stat-sessions', 'stat-humans', 'stat-rooms', 'stat-matches', 'stat-bots', 'stat-spec',
+    'stat-rss', 'stat-heap', 'stat-uptime', 'stat-load', 'stat-sysmem', 'stat-host', 'packs-tag']) text(id, '—');
+  for (const id of ['rooms-count', 'packs-count', 'mods-count', 'logs-count']) text(id, '0');
+  for (const id of ['rooms-body', 'packs-body', 'mods-body', 'logs']) { const el = $(id); if (el) el.textContent = ''; }
+  show('packs-conflicts', false);
+  show('mods-skipped', false);
+  show('session-note', false);
+}
+
 // ---- overview ---------------------------------------------------------------------------------------------
 function renderOverview(o) {
   text('badge-app', 'v' + o.version.app);
   text('badge-build', 'build ' + (o.version.build || '—'));
+  // Why no password was asked: this browser is inside a session (server/admin.js ADMIN_SESSION_TTL_MS). Saying it out loud
+  // is the difference between "I am logged in" and "anyone can read this".
+  const session = o.session || null;
+  const note = $('session-note');
+  if (note) {
+    const hours = session ? Math.round(session.ttlMs / 3600000) : 0;
+    note.hidden = !session;
+    note.textContent = session ? `已登录 · 会话最长 ${hours} 小时` : '';
+  }
   text('stat-conn', o.network.connections);
   text('stat-sessions', o.network.sessions);
   text('stat-humans', o.network.connectedPlayers);
@@ -297,8 +324,8 @@ async function poll() {
   polling = true;
   try {
     const ov = await api('/overview');
-    if (ov.status === 404) { setState('后台未启用', 'badge--off'); screen('disabled'); return; }
-    if (ov.status === 401 || ov.status === 0 && !state.running) { setState(ov.status === 0 ? '连接中断' : '需要验证', 'badge--off'); screen('login'); return; }
+    if (ov.status === 404) { setState('后台未启用', 'badge--off'); clearConsole(); screen('disabled'); return; }
+    if (ov.status === 401 || ov.status === 0 && !state.running) { setState(ov.status === 0 ? '连接中断' : '需要验证', 'badge--off'); clearConsole(); screen('login'); return; }
     if (ov.status === 200 && ov.body) { state.running = true; screen('dashboard'); renderOverview(ov.body); setState('运行中', 'badge'); }
     else setState('连接中断', 'badge--off');
 
@@ -350,6 +377,7 @@ $('btn-logout').addEventListener('click', async () => {
   state.running = false;
   if (state.timer) { clearInterval(state.timer); state.timer = null; }
   setState('已退出', 'badge--off');
+  clearConsole();
   screen('login');
 });
 

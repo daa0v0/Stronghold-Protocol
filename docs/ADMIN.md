@@ -84,12 +84,16 @@ sudo systemctl restart stronghold
 | 登录表单 | 浏览器打开 `/admin`，输入密钥 | 成功后下发一个 **HttpOnly / SameSite=Strict / Path=/** 的 Cookie |
 | Bearer | `curl -H "Authorization: Bearer $ADMIN_SECRET" …` | 给脚本用；不要把它写进 shell 历史 |
 
+**未登录时看不到任何数据**：`/admin` 只下发登录页（面板区块本身是 `hidden`，占位符是 `—`），`/api/admin/*` 一律 `401`；关掉后台（没有密钥）则连页面都是 `404`。
+
 细节：
 
 - 比较用 `crypto.timingSafeEqual`（定长、常量时间）。
 - Cookie 里的值**不是密钥**，而是**每次进程启动新生成的 24 字节随机串**；重启服务即全部失效。
+- **会话有效期 12 小时**（`ADMIN_SESSION_TTL_MS`，从最后一次登录算起），并且**服务端自己也会拒绝过期的 Cookie**——不只是靠浏览器丢弃。面板右上角会写「已登录 · 会话最长 12 小时」，所以"打开就直接进后台"是**这里还有有效会话**，不是没登录也能看。想立刻结束会话，点**退出登录**：它在服务端**换掉会话 token**，旧 Cookie 立刻作废（不是只删浏览器那一份）。
 - 请求走 TLS 时（`req.socket.encrypted` 或 `X-Forwarded-Proto: https`）Cookie 额外带 `Secure`。
 - 登录失败限流：**同一来源 5 分钟内 8 次**，超出返回 `429` + `Retry-After`（成功即清零）。
+- 所有 `/api/admin/*` 响应都带 `Cache-Control: no-store`，所以浏览器缓存、代理或后退缓存都无法回放一份已认证的数据。
 - 密钥长度 / 来源 / 失败尝试都会记到服务端日志。
 
 ## 4. 端点

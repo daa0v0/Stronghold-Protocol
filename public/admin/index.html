@@ -21,6 +21,7 @@
       <span id="badge-app" class="badge">v—</span>
       <span id="badge-build" class="badge badge--dim">build —</span>
       <span id="badge-state" class="badge badge--dim">未连接</span>
+      <span id="session-note" class="dim" hidden></span>
       <button id="btn-logout" class="btn btn--ghost" hidden>退出登录</button>
     </div>
   </header>
@@ -52,18 +53,18 @@
     <section class="grid" aria-label="概览">
       <article class="card">
         <h3>在线 / 会话</h3>
-        <p class="stat"><span id="stat-conn">0</span><small> 连接</small></p>
-        <p class="sub"><span id="stat-sessions">0</span> 会话 · <span id="stat-humans">0</span> 名玩家</p>
+        <p class="stat"><span id="stat-conn">—</span><small> 连接</small></p>
+        <p class="sub"><span id="stat-sessions">—</span> 会话 · <span id="stat-humans">—</span> 名玩家</p>
       </article>
       <article class="card">
         <h3>房间 / 对局</h3>
-        <p class="stat"><span id="stat-rooms">0</span><small> 房间</small></p>
-        <p class="sub"><span id="stat-matches">0</span> 局进行中 · <span id="stat-bots">0</span> AI · <span id="stat-spec">0</span> 观战</p>
+        <p class="stat"><span id="stat-rooms">—</span><small> 房间</small></p>
+        <p class="sub"><span id="stat-matches">—</span> 局进行中 · <span id="stat-bots">—</span> AI · <span id="stat-spec">—</span> 观战</p>
       </article>
       <article class="card">
         <h3>进程</h3>
-        <p class="stat"><span id="stat-rss">0</span><small> MB RSS</small></p>
-        <p class="sub">堆 <span id="stat-heap">0</span> MB · 运行 <span id="stat-uptime">—</span></p>
+        <p class="stat"><span id="stat-rss">—</span><small> MB RSS</small></p>
+        <p class="sub">堆 <span id="stat-heap">—</span> MB · 运行 <span id="stat-uptime">—</span></p>
       </article>
       <article class="card">
         <h3>主机</h3>

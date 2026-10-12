@@ -68,8 +68,15 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
   const isUi = (path) => path === ADMIN_UI_PATH || path === `${ADMIN_UI_PATH}/` || path.startsWith(`${ADMIN_UI_PATH}/`);
   const isApi = (path) => path === ADMIN_API_PREFIX || path.startsWith(`${ADMIN_API_PREFIX}/`);
 
-  /** @param {any} req @param {any} res @param {number} status @param {object} body */
-  const json = (req, res, status, body) => sendJson(req, res, status, body);
+  /**
+   * Every console answer is `no-store`: an authenticated payload must not be replayable by the browser cache, a shared
+   * proxy or the back/forward cache after the session ends (docs/ADMIN.md §3).
+   * @param {any} req @param {any} res @param {number} status @param {object} body
+   */
+  const json = (req, res, status, body) => {
+    res.setHeader('Cache-Control', 'no-store');
+    sendJson(req, res, status, body);
+  };
 
   return async function handle(req, res, parts) {
     const path = parts.rawPath;
@@ -91,6 +98,7 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
       if (path.includes('..')) { sendError(req, res, 400, '请求地址无效 · Bad request'); return true; }
       // /admin and /admin/ → the panel; anything else under /admin/ stays a static file
       const target = path === ADMIN_UI_PATH || path === `${ADMIN_UI_PATH}/` ? `${ADMIN_UI_PATH}/index.html` : path;
+      res.setHeader('Cache-Control', 'no-store');
       await serveStatic(req, res, target, parts.query);
       return true;
     }
@@ -114,7 +122,7 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
     }
     if (path === `${ADMIN_API_PREFIX}/logout`) {
       if (method !== 'POST') { json(req, res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }); return true; }
-      res.setHeader('Set-Cookie', admin.loggedOut(req));
+      res.setHeader('Set-Cookie', admin.logout(req));
       json(req, res, 200, { ok: true });
       return true;
     }

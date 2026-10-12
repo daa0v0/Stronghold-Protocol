@@ -43,6 +43,15 @@ export const ADMIN_MIN_SECRET_LEN = 6;
  * addresses and the per-address throttle no longer bounds the attempts.
  */
 export const ADMIN_RECOMMENDED_SECRET_LEN = 12;
+/**
+ * How long one login lasts, counted from the successful POST /api/admin/login. It bounds **both** sides: the cookie's
+ * Max-Age and the server's own check, so a replayed cookie stops working even if a client ignored the Max-Age.
+ *
+ * Why it exists: without it the session token was valid for the whole life of the process, and an owner who logged in
+ * once would open /admin days later straight into the dashboard — which reads exactly like "I never logged in and I can
+ * still see the data". It also bounds how long a leaked cookie is worth anything.
+ */
+export const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 export const ADMIN_LOG_MAX = 400;
 export const ADMIN_LOG_TEXT_MAX = 500;
 
@@ -189,7 +198,9 @@ export function createAdminService(deps) {
     serverSettings = null, announcements = null, packs = null, settingsDir = null, serverMods = null,
     ring, log = console, startedAt = Date.now(), now = Date.now, build = () => '',
   } = deps;
-  const sessionToken = enabled ? newSessionToken() : '';
+  /** The per-process session token, and when the current session started (0 = nobody has logged in yet). */
+  let sessionToken = enabled ? newSessionToken() : '';
+  let sessionStartedAt = 0;
   /** @type {Map<string, { count: number, until: number }>} */
   const failures = new Map();
 
@@ -213,7 +224,7 @@ export function createAdminService(deps) {
   function cookieFlags(req) {
     const forwarded = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
     const secure = !!req?.socket?.encrypted || forwarded === 'https';
-    return `HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${secure ? '; Secure' : ''}`;
+    return `HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(ADMIN_SESSION_TTL_MS / 1000)}${secure ? '; Secure' : ''}`;
   }
 
   /**
@@ -226,7 +237,11 @@ export function createAdminService(deps) {
     const auth = String(req?.headers?.authorization || '');
     if (auth.startsWith('Bearer ')) return secretEquals(auth.slice(7).trim(), secret);
     const token = cookies(req)[ADMIN_COOKIE];
-    return !!token && secretEquals(token, sessionToken);
+    // The token alone is not enough: it only counts while a login is inside its lifetime (`sessionStartedAt > 0` also
+    // makes the token minted at boot unusable before the first login).
+    if (!token || !sessionStartedAt) return false;
+    if (now() - sessionStartedAt >= ADMIN_SESSION_TTL_MS) return false;
+    return secretEquals(token, sessionToken);
   }
 
   /**
@@ -251,11 +266,22 @@ export function createAdminService(deps) {
       return { ok: false, status: 401, error: 'BAD_SECRET' };
     }
     failures.delete(key);
+    sessionStartedAt = time;
     log.info?.(`[admin] 登录成功 source=${key}`);
     return { ok: true, cookie: `${ADMIN_COOKIE}=${sessionToken}; ${cookieFlags(req)}` };
   }
 
-  const loggedOut = (req) => `${ADMIN_COOKIE}=; ${cookieFlags(req)}; Max-Age=0`;
+  /**
+   * Log out: the browser's cookie is cleared **and** the session dies here — the token is replaced and the session time
+   * reset, so a copy of the old cookie (another tab, a saved curl, a proxy log) stops working immediately. The console has
+   * one session at a time by design, so this logs out every browser.
+   * @param {any} req
+   */
+  function logout(req) {
+    sessionToken = enabled ? newSessionToken() : '';
+    sessionStartedAt = 0;
+    return `${ADMIN_COOKIE}=; ${cookieFlags(req)}; Max-Age=0`;
+  }
 
   /** A room as the console shows it: the public room state plus the running match's phase, round and fixed groups. */
   function roomView(room) {
@@ -304,6 +330,9 @@ export function createAdminService(deps) {
     const emergency = bandwidthEmergency?.status?.() || null;
     return {
       at: now(),
+      // The session this answer was asked with: the panel shows it (`会话最长 12 小时`) so an owner who is still logged in
+      // understands why no password was asked, instead of reading it as "anyone can see this".
+      session: { ttlMs: ADMIN_SESSION_TTL_MS, since: sessionStartedAt, expiresAt: sessionStartedAt ? sessionStartedAt + ADMIN_SESSION_TTL_MS : 0 },
       version: { app: APP_VERSION, protocol: PROTOCOL_VERSION, build: build(), node: process.version },
       host: { platform: process.platform, arch: process.arch, hostname: os.hostname(), cpuCount: os.cpus().length,
         loadavg: process.platform === 'win32' ? null : os.loadavg().map((v) => Math.round(v * 100) / 100),
@@ -505,12 +534,12 @@ export function createAdminService(deps) {
 
   return {
     enabled, problem, secretSource,
-    authenticate, login, loggedOut,
+    authenticate, login, logout,
     overview, rooms, closeRoom, broadcast, setMaintenance, maintenanceAvailable,
     packs: packsOverview, setPacks, mods: modsOverview, setMods,
     /** @param {number} since @param {number} limit */
     logs: (since, limit) => ({ ...ring.list(since, limit), at: now() }),
     /** Diagnostics for the boot line; never includes the secret. */
-    status: () => ({ enabled, problem, secretSource }),
+    status: () => ({ enabled, problem, secretSource, sessionTtlMs: ADMIN_SESSION_TTL_MS, loggedIn: sessionStartedAt > 0 }),
   };
 }
