@@ -183,6 +183,7 @@ import { FreezeScheduler } from './freezeScheduler.js';
 import { createPoolGroups, drawDisabledBonds } from './pool.js';
 import { PlayerState } from './PlayerState.js';
 import { EffectDispatcher, getDefaultRegistry } from './effectsMeta.js';
+import { matchRulesFor } from '../../shared/matchRules.js';
 import { setupMatchWaves } from './waves.js';
 import { GAME_SPEED, HEADLESS_SLICE_MS } from './fields.js';
 import { MatchPlatform } from './match/platform.js';
@@ -296,6 +297,15 @@ export class Match {
      * next match of the room (the same socket, the same field ids) never names a battle of this match.
      */
     this.battlePrefix = `${this.seed.toString(36)}${Number.isInteger(opts.matchNo) && opts.matchNo > 0 ? `-${opts.matchNo.toString(36)}` : ''}`;
+    /**
+     * The code mods this room picked, or null when it did not narrow them (= every mod the server enabled). A code mod is
+     * loaded once, server-wide, so this is what lets one answer "am I on for THIS match?" — `Match.modEnabled(id)` — and what
+     * the rule providers are resolved against (docs/MODS.md §4.6).
+     * @type {string[]|null}
+     */
+    this.roomMods = Array.isArray(opts.codeMods) ? opts.codeMods.slice() : null;
+    /** The rules this match runs with: the server-wide ones, then every rule provider's patch (shared/matchRules.js). */
+    this.rules = matchRulesFor(this);
     this._progressTimer = null;
     this._bossClock = null;
     this._lastPoolAt = -Infinity;

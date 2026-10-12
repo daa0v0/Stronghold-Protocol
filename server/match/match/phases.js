@@ -10,7 +10,6 @@ import { buildNormalWave, buildBossWave } from '../waves.js';
 import { pairPlayers } from '../finalAssault.js';
 import { botPickBand } from '../bot.js';
 import { OK, fail, DELAYS, BAND_TURN_SECONDS } from './common.js';
-import { matchRules } from '../../../shared/matchRules.js';
 
 /** Single-pool diagnostics and old fixtures keep their readable/writable first-group fields. */
 export function installDraftFacade(stage, fields) {
@@ -219,7 +218,7 @@ export class MatchPhases {
    * `_applyBand`'s dedupe) follows, so the rule cannot be half-applied.
    */
   bandTaken(bandId, playerId) {
-    if (matchRules().bandDuplicates) return false;
+    if (this.rules.bandDuplicates) return false;
     const picks = this.draftGroup(playerId)?.picks || {};
     for (const [pid, id] of Object.entries(picks)) if (pid !== playerId && id === bandId) return true;
     return false;

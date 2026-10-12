@@ -11,11 +11,9 @@
 // seats' LP, alive only in the boss phases). This module is about the per-seat LP the whole match uses.
 //
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
-import { sharedLpRule } from '../../../shared/matchRules.js';
-
 export class MatchLp {
-  /** The shared-health-bar rule in force, or null. */
-  get sharedLp() { return sharedLpRule(); }
+  /** The shared-health-bar rule in force FOR THIS MATCH, or null (Match.rules, shared/matchRules.js). */
+  get sharedLp() { return this.rules.sharedLp; }
 
   /**
    * The size the team's one bar starts at, from the rule: the SUM or the MAX of the teammates' chosen bands' `totalHp`

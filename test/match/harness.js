@@ -73,6 +73,8 @@ export function makeMatch(o = {}) {
     onEnd: (s) => { h.ended = s; h.endedCount++; },
     scheduler: sched,
     registry: o.registry,
+    // The room's per-match code-mod choice (docs/MODS.md §4.6): undefined = the room did not narrow them.
+    codeMods: o.codeMods,
     BattleClass: o.fake ? FakeBattle : undefined,
     battleContent: o.battleContent,
     timerScale: o.timerScale,

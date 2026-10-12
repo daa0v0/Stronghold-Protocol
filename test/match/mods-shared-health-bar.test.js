@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { matchRules, resetMatchRules, setMatchRules } from '../../shared/matchRules.js';
+import { matchRules, matchRuleProviders, resetMatchRuleProviders, resetMatchRules, setMatchRules } from '../../shared/matchRules.js';
 import { loadMods, scanMods } from '../../server/mods.js';
 import { makeMatch, checkInvariants } from './harness.js';
 
@@ -89,21 +89,33 @@ test('the team takes damage together, and an empty bar is empty for everyone', (
   } finally { h.m.dispose(); resetMatchRules(); }
 });
 
-test('the rule is what the shipped mod sets, loaded through the real mod loader', async () => {
-  resetMatchRules();
+test('the rule comes from the shipped mod, per match, loaded through the real mod loader', async () => {
+  resetMatchRuleProviders();
   const scan = scanMods(path.join(ROOT, 'mods'));
   assert.deepEqual(scan.skipped, []);
   const runtime = await loadMods(scan.mods, { enabled: ['shared-health-bar'], log: silent });
   try {
     assert.deepEqual(runtime.failed, []);
     assert.deepEqual(runtime.loaded.map((m) => m.id), ['shared-health-bar']);
-    assert.deepEqual(matchRules().sharedLp, { mode: 'sum', source: 'band' },
-      'the mod set the rule from its own config.json');
-  } finally { resetMatchRules(); }
+    assert.ok(matchRuleProviders().includes('shared-health-bar'), 'the mod registered a per-match rule provider');
 
-  const off = await loadMods(scan.mods, { enabled: [], log: silent });
-  assert.deepEqual(off.loaded, []);
-  assert.equal(matchRules().sharedLp, null);
+    // The room picked it: the mod's own config.json decides the bar.
+    const on = drafted({ codeMods: ['shared-health-bar'] });
+    try {
+      assert.deepEqual(on.m.rules.sharedLp, { mode: 'sum', source: 'band' }, 'this match runs the mod');
+      assert.deepEqual(lps(on), [lps(on)[0], lps(on)[0], lps(on)[0], lps(on)[0]], 'and the team shares one bar');
+      checkInvariants(on.m);
+    } finally { on.m.dispose(); }
+
+    // The room left it out: the shipped per-seat health, even though the mod is loaded server-wide.
+    const off = drafted({ codeMods: [] });
+    try {
+      assert.equal(off.m.modEnabled('shared-health-bar'), false);
+      assert.equal(off.m.rules.sharedLp, null, 'this match does not run the mod');
+      assert.deepEqual(lps(off), bands(off), 'each seat holds its own band');
+      checkInvariants(off.m);
+    } finally { off.m.dispose(); }
+  } finally { resetMatchRuleProviders(); }
 });
 
 test('the rule validates its input and resets to the shipped behaviour', () => {

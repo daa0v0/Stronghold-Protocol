@@ -18,10 +18,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { setMatchRules } from '../../shared/matchRules.js';
+import { registerMatchRuleProvider } from '../../shared/matchRules.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULTS = { mode: 'sum', source: 'band' };
+/** This mod's id: what `Match.modEnabled` is asked about, and what the room's per-match choice names. */
+const MOD_ID = 'shared-health-bar';
 
 /** @param {{ id: string, version: string, log: { info: Function, warn: Function } }} ctx */
 export async function setup(ctx) {
@@ -31,16 +33,10 @@ export async function setup(ctx) {
   } catch (error) {
     ctx.log.warn(`config.json 读取失败，使用默认值：${error.message}`);
   }
-  const { applied, rejected } = setMatchRules({
-    sharedLp: { mode: config.mode === 'max' ? 'max' : 'sum', source: config.source === 'lp' ? 'lp' : 'band' },
-  });
-  if (rejected.length) {
-    ctx.log.warn(`配置无效，本 mod 未启用：${rejected.join(', ')}（mode 需为 sum|max，source 需为 band|lp）`);
-    return;
-  }
-  const rule = applied.includes('sharedLp');
+  const sharedLp = { mode: config.mode === 'max' ? 'max' : 'sum', source: config.source === 'lp' ? 'lp' : 'band' };
+  // PER MATCH, not server-wide: the provider is asked once per match and answers for this mod, so a room that did not pick
+  // it plays the shipped per-seat health (docs/MODS.md §4.6).
+  registerMatchRuleProvider(MOD_ID, (m) => ({ sharedLp: m.modEnabled(MOD_ID) ? sharedLp : null }));
   const what = config.source === 'lp' ? '当前血量' : '所选方针的 totalHp';
-  ctx.log.info(rule
-    ? `全队共享一条血条：大小 = 队内${what} 的${config.mode === 'max' ? '最高值' : '总和'}`
-    : '未启用');
+  ctx.log.info(`全队共享一条血条：本局启用时，大小 = 队内${what} 的${config.mode === 'max' ? '最高值' : '总和'}`);
 }

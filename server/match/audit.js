@@ -45,7 +45,6 @@
 
 import { PHASE, MAX_DRAFT_CARDS } from '../../shared/constants.js';
 import { coopDraftCardCount, uniteRoundLimit } from '../../shared/playerCapacity.js';
-import { matchRules } from '../../shared/matchRules.js';
 import { collectViolations } from './invariants.js';
 import { mergeTile, pieceDir, canPlace, placeClass } from './board.js';
 import { pairPlayers, bossPoolHp, hiddenEligible } from './finalAssault.js';
@@ -132,7 +131,7 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
   const checkBandPicks = (stage) => {
     // A mod rule (docs/MODS.md, shared/matchRules.js `bandDuplicates`): with it, several players of one pool group may
     // hold the same 开局策略/方针, which is exactly what the shipped uniqueness assertion forbids.
-    const dup = matchRules().bandDuplicates;
+    const dup = m.rules.bandDuplicates;
     for (const g of draftGroups(stage)) {
       const picks = Object.entries(g.picks);
       if (!dup && new Set(picks.map(([, id]) => id)).size !== picks.length) fail(`band draft group ${g.id ?? 1}: duplicate strategy`);

@@ -19,6 +19,16 @@ export const MOD_CHOICE_WINDOW = Object.freeze([
 
 export class MatchModChoice {
   /**
+   * Whether one code mod is on for THIS match (docs/MODS.md §4.6). A room that did not narrow the code mods (`roomMods` is
+   * null) runs every mod the server enabled; a room that did runs only the ones it picked. A mod asks this from its own
+   * hooks — it is loaded once, server-wide, so it has no per-match setup of its own.
+   * @param {string} id
+   */
+  modEnabled(id) {
+    return this.roomMods == null ? true : this.roomMods.includes(id);
+  }
+
+  /**
    * Ask one player a mod's question. An AI seat (or a human under AI 托管) is never asked — it would have to answer itself —
    * and a seat that already has a choice open stays busy, so one prompt at a time.
    * @param {import('../PlayerState.js').PlayerState} ps

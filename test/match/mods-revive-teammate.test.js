@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PHASE } from '../../shared/constants.js';
 import { resetModChoices } from '../../shared/modChoices.js';
-import { resetMatchRules } from '../../shared/matchRules.js';
+import { resetMatchRuleProviders } from '../../shared/matchRules.js';
 import { loadMods, scanMods } from '../../server/mods.js';
 import { makeMatch, checkInvariants } from './harness.js';
 
@@ -22,22 +22,23 @@ const REVIVE_LP = 1;
 
 async function withMod(run) {
   resetModChoices();
-  resetMatchRules();
+  resetMatchRuleProviders();
   const scan = scanMods(path.join(ROOT, 'mods'));
   const runtime = await loadMods(scan.mods, { enabled: ['revive-teammate'], log: silent });
   try {
     assert.deepEqual(runtime.failed, [], 'the mod loads');
     assert.deepEqual(runtime.loaded.map((m) => m.id), ['revive-teammate']);
     await run();
-  } finally { resetModChoices(); resetMatchRules(); }
+  } finally { resetModChoices(); resetMatchRuleProviders(); }
 }
 
 /**
  * A three-player co-op that has just been through a settle in which p_2's LP ran out — the moment the mod asks about.
- * @param {{ seed?: number, survivorLp?: number, left?: boolean }} [o]
+ * `codeMods` is the room's per-match choice: the mod asks about it, so `[]` is a room that left it out.
+ * @param {{ seed?: number, survivorLp?: number, left?: boolean, codeMods?: string[] }} [o]
  */
-function settled({ seed = 5, survivorLp = 28, left = false } = {}) {
-  const h = makeMatch({ mode: 'coop', humans: 3, seed, fake: true }).start().toPrep(1);
+function settled({ seed = 5, survivorLp = 28, left = false, codeMods = ['revive-teammate'] } = {}) {
+  const h = makeMatch({ mode: 'coop', humans: 3, seed, fake: true, codeMods }).start().toPrep(1);
   const m = h.m;
   for (const ps of m.alivePlayers()) if (ps.playerId !== 'p_2') ps.lp = survivorLp;
   const victim = m.players.get('p_2');
@@ -149,6 +150,21 @@ test('a second teammate cannot pay for a seat that is already back', async () =>
       assert.deepEqual(m.handle('p_1', { t: 'g.choice', idx: 0, choiceId: pending.id }), { ok: true });
       assert.equal(second.lp, before, 'nothing is charged for a seat that is already back');
       assert.equal(m.players.get('p_2').lp, REVIVE_LP, 'and its health is left as it came back');
+      checkInvariants(m);
+    } finally { h.m.dispose(); }
+  });
+});
+
+test('a room that did not pick the mod is never asked (the mod still runs server-wide)', async () => {
+  await withMod(() => {
+    const h = settled({ seed: 13, codeMods: [] });
+    try {
+      const m = h.m;
+      assert.equal(m.roomMods.length, 0);
+      assert.equal(m.modEnabled('revive-teammate'), false, 'this match left the mod out');
+      assert.equal(openChoice(m, 'p_0'), null, 'so nobody was asked');
+      assert.equal(openChoice(m, 'p_1'), null);
+      assert.equal(m.players.get('p_2').alive, false, 'and the seat stays out');
       checkInvariants(m);
     } finally { h.m.dispose(); }
   });

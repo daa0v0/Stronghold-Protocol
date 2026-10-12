@@ -11,9 +11,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { setMatchRules } from '../../shared/matchRules.js';
+import { registerMatchRuleProvider } from '../../shared/matchRules.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+/** This mod's id: what `Match.modEnabled` is asked about, and what the room's per-match choice names. */
+const MOD_ID = 'dup-strategies';
 
 /** @param {{ id: string, version: string, log: { info: Function, warn: Function } }} ctx */
 export async function setup(ctx) {
@@ -24,9 +26,9 @@ export async function setup(ctx) {
     ctx.log.warn(`config.json 读取失败，使用默认值：${error.message}`);
   }
   const on = config.bandDuplicates !== false;
-  const { applied, rejected } = setMatchRules({ bandDuplicates: on });
-  if (rejected.length) ctx.log.warn(`忽略无效配置：${rejected.join(', ')}`);
-  ctx.log.info(applied.includes('bandDuplicates') && on
-    ? '开局策略不再唯一：同一池组内多名玩家可以选择同一个方针'
-    : '未启用（config.json 的 bandDuplicates 为 false）');
+  if (!on) { ctx.log.info('未启用（config.json 的 bandDuplicates 为 false）'); return; }
+  // PER MATCH, not server-wide: the provider is asked once per match and answers for this mod, so a room that did not pick
+  // it plays the shipped draft (docs/MODS.md §4.6).
+  registerMatchRuleProvider(MOD_ID, (m) => ({ bandDuplicates: m.modEnabled(MOD_ID) }));
+  ctx.log.info('开局策略不再唯一：本局启用时，同一池组内多名玩家可以选择同一个方针');
 }

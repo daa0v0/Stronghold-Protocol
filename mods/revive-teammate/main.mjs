@@ -39,6 +39,7 @@ function setupRevive(config, log) {
   registerModChoice({
     id: CHOICE_ID,
     onPick(m, ps, { card, idx, data }) {
+      if (!m.modEnabled(CHOICE_ID)) return;   // the room did not pick this mod for the match
       const targetId = data && data.target;
       if (!targetId) return;
       if (idx !== ACCEPT) { log.info(`${ps.name} 放弃复活 ${data.name || targetId}`); return; }
@@ -66,6 +67,8 @@ function setupRevive(config, log) {
   });
 
   registerModSettleHook((m, { eliminated }) => {
+    // Per match: a room that did not pick this mod never asks (docs/MODS.md §4.6).
+    if (!m.modEnabled(CHOICE_ID)) return;
     for (const out of eliminated) {
       // A seat that LEFT is not a defeat — there is nobody to bring back.
       if (out.left) continue;
