@@ -108,3 +108,23 @@ packs/my-content/patch.json
   a skin or an item ships a data pack for the manifest and an assets pack for the files (above).
 
 Details: [docs/PACKS.md](../docs/PACKS.md) §4.
+
+## Turning a pack off (the server owner)
+
+A pack that changes the game (`assets`, `data`) can be switched off for the whole server, and a pack outside its `app`
+range has to be confirmed once before it loads. Both are one click in the server's own console at `/admin` → 内容包
+(that panel writes the same `runtime/server-settings.json` the CLI does), or a line in that file:
+
+```json
+{ "version": 1, "maxAiPerRoom": null, "requireAssetCache": false, "packs": { "off": ["hd-art"], "allow": ["old-pack"] } }
+```
+
+- `off` — not loaded, not served, not counted in the content tag.
+- `allow` — load although it is outside its declared `app` range (only packs that change the game need this; a language
+  pack outside its range still loads, flagged).
+- A language pack cannot be turned off: it is part of the client's own UI, and the other languages fall back to English.
+- An `assets` switch applies at once; a `data` switch (its tables are fixed when the server starts) applies at the next
+  start, so the pack list, the content tag and `/data/*.json` never disagree.
+
+Full semantics: [docs/PACKS.md](../docs/PACKS.md) §4 "The owner's switches". The console itself:
+[docs/ADMIN.md](../docs/ADMIN.md) §5.

@@ -225,7 +225,31 @@ Not through the wire: the compact v1 position tables are frozen and a frame with
 plain JSON (`/healthz`, the index) and why **per-room** mod state, when the create-room panel lands, will arrive as its
 own JSON-fallback message type (the way `room.skins` and `m.chat` did), not as an extra `welcome` field.
 
-### Code and gameplay mods (the owner's decision, 2026-10-12)
+### The owner's switches
+
+A server owner decides which packs the server loads at all. The policy lives in the private settings file the CLI already
+writes (`runtime/server-settings.json`), as `packs: { off: [], allow: [] }`:
+
+| Key | Meaning |
+|---|---|
+| `off` | ids this server does not load at all: absent from the index, never served, not counted in the content tag |
+| `allow` | ids that load although they are outside their declared `app` range |
+
+- **Only a type that changes the game can be turned off** (`PACK_TYPES[type].identity`: `assets`, `data`). A language
+  pack is part of the client's own UI and the other languages fall back to English, so turning one off is refused rather
+  than silently accepted.
+- **An incompatible pack that changes the game is held back** (`compatible: false`, outside its `app` range) until the
+  owner confirms it (an `allow` entry) — the pack is scanned, listed and reported, but not loaded and not served.
+  An incompatible **language** pack still loads and is flagged, as it always was: it only changes text, and what it lacks
+  falls back.
+- **When a switch takes effect**: a live type (`assets`) at once — the index, the content tag and the served files follow
+  in the same tick. A type that is not live (`data`: the tables were fixed when the process started) at the **next
+  start**: switching it while the server runs is recorded and reported (`restartRequired`), but the pack stays in force so
+  that the index, the content tag and `/data/<name>.json` can never disagree about what the server is running.
+- **Where**: `/admin` → 内容包 (the one setting this fork lets the panel write — see `server/admin.js`; the CLI and the
+  panel share one file, one validator and one atomic writer) or the file/CLI directly. Every change is logged.
+
+
 
 The study below kept third-party code out of packs. The owner has since decided that this project ships as an open
 source fan remake whose players may write code mods, so:
@@ -265,8 +289,9 @@ decision of 2026-10-12, see "Code and gameplay mods" above):
 - ⚠ **No third-party code** — *replaced*: code mods are allowed, installed and enabled by the server owner (a pack
   manifest still never runs anything), and a room host chooses per room whether a match uses a mod.
 - **The golden results stay on the original content**; a pack never changes them.
-- ⚠ **A pack's app range never blocks silently** — *sharpened*: an incompatible pack is flagged `compatible: false` and
-  the owner decides whether to load it, rather than the loader deciding for them.
+- ⚠ **A pack's app range never blocks silently** — *sharpened*: a pack outside its declared range is flagged
+  `compatible: false`, and an owner-confirmed `allow` entry is what loads one that changes the game (a language pack
+  still loads, flagged). Nothing is dropped without a reason and a switch ("The owner's switches" above).
 
 ## 5. Tools
 

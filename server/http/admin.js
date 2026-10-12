@@ -56,8 +56,8 @@ const wantJson = (req) => {
 };
 
 /** The leaf names below /api/admin. Anything else is 404; a known leaf with the wrong method is 405. */
-const READ_ENDPOINTS = new Set(['/overview', '/rooms', '/logs']);
-const WRITE_ENDPOINTS = new Set(['/broadcast', '/maintenance', '/rooms/close']);
+const READ_ENDPOINTS = new Set(['/overview', '/rooms', '/logs', '/packs']);
+const WRITE_ENDPOINTS = new Set(['/broadcast', '/maintenance', '/rooms/close', '/packs']);
 
 /**
  * @param {{ admin: any, serveStatic: (req: any, res: any, rawPath: string, query: string) => Promise<void>,
@@ -131,10 +131,13 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
     // Dispatch by the leaf below /api/admin, so an UNKNOWN path is 404 while a KNOWN path with the wrong method is 405.
     const leaf = path.slice(ADMIN_API_PREFIX.length);
 
-    if (READ_ENDPOINTS.has(leaf)) {
+    // A leaf that is both readable and writable (/packs) is answered as a read for GET and falls through to the write
+    // path otherwise; every other read-only leaf keeps answering 405 to anything but GET.
+    if (READ_ENDPOINTS.has(leaf) && (method === 'GET' || !WRITE_ENDPOINTS.has(leaf))) {
       if (method !== 'GET') { json(req, res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }); return true; }
       if (leaf === '/overview') { json(req, res, 200, admin.overview()); return true; }
       if (leaf === '/rooms') { json(req, res, 200, admin.rooms()); return true; }
+      if (leaf === '/packs') { json(req, res, 200, admin.packs()); return true; }
       const q = new URLSearchParams(parts.query);
       const since = Number(q.get('since')) || 0;
       const limit = Math.min(400, Math.max(1, Number(q.get('limit')) || 200));
@@ -156,6 +159,15 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
     if (leaf === '/broadcast') {
       const result = admin.broadcast(body.text, body.kind);
       json(req, res, result.ok ? 200 : 400, result);
+      return true;
+    }
+    if (leaf === '/packs') {
+      // The one setting this fork lets the panel write (server/admin.js): a bad pack id is 404, a language pack that may
+      // not be turned off is 409, a failed write is 500 — the console shows the error and reloads the list.
+      const result = admin.setPacks(body);
+      const status = result.ok ? 200 : result.error === 'UNKNOWN_PACK' ? 404 : result.error === 'LANGUAGE_LOCKED' ? 409
+        : result.error === 'UNAVAILABLE' ? 503 : result.error === 'WRITE_FAILED' ? 500 : 400;
+      json(req, res, status, result);
       return true;
     }
     if (leaf === '/maintenance') {

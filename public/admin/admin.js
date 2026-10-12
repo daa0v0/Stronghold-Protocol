@@ -147,6 +147,82 @@ function appendLogs(entries) {
 
 // ---- polling ----------------------------------------------------------------------------------------------
 let polling = false;
+/**
+ * 内容包 panel (docs/PACKS.md §4): the server-level mod switches. Every value goes in through textContent, like the rest
+ * of this console. A language pack has no switch (it is part of the client's own UI); a pack that is outside its app
+ * range and changes the game offers 确认加载 instead of 启用.
+ * @param {{ packs?: any[], tag?: string, policy?: any }} body
+ */
+function renderPacks(body) {
+  const tbody = $('packs-body');
+  if (!tbody) return;
+  tbody.textContent = '';
+  const packs = (body && body.packs) || [];
+  text('packs-count', packs.length);
+  text('packs-tag', body && body.tag ? body.tag : '—');
+  show('packs-empty', packs.length === 0);
+  for (const p of packs) {
+    const tr = document.createElement('tr');
+    const cell = (value, cls) => {
+      const td = document.createElement('td');
+      td.textContent = value == null || value === '' ? '—' : String(value);
+      if (cls) td.className = cls;
+      tr.appendChild(td);
+      return td;
+    };
+    cell(p.type);
+    cell(p.id, 'mono');
+    cell(p.name);
+    cell(p.version);
+    cell(p.app || '任意');
+    cell(!p.enabled ? (p.reason === 'off' ? '已停用' : '待确认') : '已加载', !p.enabled ? 'state-frozen' : 'state-live');
+    cell([p.overrides ? p.overrides + ' 项替换' : null, p.patches ? p.patches + ' 张表' : null, p.strings ? p.strings + ' 条文案' : null].filter(Boolean).join(' · '));
+    const actions = document.createElement('td');
+    actions.className = 'row';
+    if (p.type !== 'lang') {
+      actions.appendChild(packButton(p.enabled ? '停用' : '启用', p.enabled ? 'btn--danger' : 'btn--primary',
+        () => setPack({ id: p.id, enabled: !p.enabled })));
+      if (!p.compatible && !p.enabled) {
+        actions.appendChild(packButton('确认加载', 'btn--warn', () => setPack({ id: p.id, confirmed: true })));
+      }
+    }
+    if (p.live === false) {
+      const note = document.createElement('span');
+      note.className = 'dim';
+      note.textContent = '重启后生效';
+      note.title = '数据包的表在服务器启动时就固定了，切换要重启';
+      actions.appendChild(note);
+    }
+    tr.appendChild(actions);
+    tbody.appendChild(tr);
+  }
+}
+
+/** A small button for the pack table. */
+function packButton(label, cls, onClick) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn ' + (cls || 'btn--ghost');
+  btn.textContent = label;
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+/** Flip one pack switch, then redraw from the answer (the server re-scans in the same request). */
+async function setPack(body) {
+  const res = await api('/packs', { body });
+  if (res.status === 200) {
+    renderPacks(res.body);
+    if (res.body && res.body.restartRequired) alert('已保存。这个数据包的表在服务器启动时固定，重启后生效。');
+    return;
+  }
+  const why = res.body && res.body.error;
+  alert(why === 'LANGUAGE_LOCKED' ? '语言包不能停用：它是客户端自身的一部分，其他语言还要回退到英文。'
+    : why === 'UNKNOWN_PACK' ? '这个包已经不在了，列表已刷新。'
+      : '操作失败：' + (why || res.status));
+  poll();
+}
+
 async function poll() {
   if (polling) return;
   polling = true;
@@ -159,6 +235,9 @@ async function poll() {
 
     const rooms = await api('/rooms');
     if (rooms.status === 200 && rooms.body) renderRooms(rooms.body.rooms || []);
+
+    const packs = await api('/packs');
+    if (packs.status === 200 && packs.body) renderPacks(packs.body);
 
     const logs = await api('/logs?since=' + state.since + '&limit=200');
     if (logs.status === 200 && logs.body) {

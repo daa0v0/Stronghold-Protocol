@@ -38,6 +38,8 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
  *   plain role, a pool for a `many` role); overrides: the resource URLs an assets pack rewrites (`files.map`'s keys);
  *   patches: the data patches a data pack declares (server/dataPacks.js applies them)
  * @typedef {{ where: string, problems: string[] }} Skipped
+ * @typedef {{ id: string, type: string, name: string, version: string, app: string, compatible: boolean, where: string,
+ *   reason: 'off' | 'unconfirmed' }} Denied  a pack that was scanned and then held back by the owner's policy
  */
 
 /** Largest number of URL rewrites one assets pack may declare (the map is held in memory for the index and the check). */
@@ -270,27 +272,73 @@ function signature({ publicDir, dataDir, packsDir }) {
  * @param {{ publicDir: string, dataDir: string, packsDir: string }} dirs
  * @param {{ log?: { info: Function, warn: Function }, app?: string, recheckMs?: number }} [opts]
  *   recheckMs: how long a scan stays trusted before the folders are looked at again (default 1000; 0 = every call)
+ *   policy: the owner's content-pack policy (server/serverSettings.js `packs`, set from /admin) as a function returning
+ *     `{ off?: string[], allow?: string[] }` or null: `off` = ids this server does not load at all, `allow` = ids the
+ *     owner confirmed although they are outside their app range. Read on every scan, so a change takes effect at once.
  */
-export function createPackRegistry(dirs, { log = { info: noop, warn: noop }, app = APP_VERSION, recheckMs = 1000 } = {}) {
+export function createPackRegistry(dirs, { log = { info: noop, warn: noop }, app = APP_VERSION, recheckMs = 1000, policy = null } = {}) {
   let sig = null;
   let checkedAt = -Infinity;
-  /** @type {ReturnType<typeof scanPacks> & { index: ReturnType<typeof packIndexOf>, byId: Map<string, Pack> }} */
+  /** The policy the current `state` was built with (server/packs.js refresh): a change bypasses the recheck window. */
+  let appliedPolicy = null;
+  const readPolicy = () => {
+    const pol = typeof policy === 'function' ? policy() || null : policy || null;
+    return { off: new Set(pol?.off || []), allow: new Set(pol?.allow || []) };
+  };
+  /**
+   * The policy a pack that is NOT live (`PACK_TYPES[type].live === false`: the data type, whose tables the simulation
+   * fixed at start) was loaded under. Switching such a pack off or on at runtime would leave the index and the content
+   * tag claiming one thing while `/data/<name>.json` still serves its patches — so for those types the policy is frozen
+   * at start, and /admin says a change needs a restart.
+   */
+  const startPolicy = readPolicy();
+  /** @type {ReturnType<typeof scanPacks> & { index: ReturnType<typeof packIndexOf>, byId: Map<string, Pack>, denied: Denied[] }} */
   let state = null;
   const told = new Set();
   const tell = (fn, line) => { if (!told.has(line)) { told.add(line); fn(line); } };
 
   function refresh(force = false) {
     const now = Date.now();
-    if (state && !force && now - checkedAt < recheckMs) return state;
+    // The owner's policy (docs/PACKS.md §4): a pack turned off never loads, and an incompatible pack that changes the
+    // game waits for an explicit confirmation. An incompatible LANGUAGE pack still loads — it only changes text, and the
+    // strings it lacks fall back — so a translation made for an older release keeps working.
+    const pol = readPolicy();
+    const off = new Set(pol.off);
+    const allow = new Set(pol.allow);
+    // The policy is part of the cache key AND of the time gate: a switch flipped in /admin must take effect at once,
+    // although no pack file changed and the folder may not be looked at again for recheckMs.
+    const polKey = `${[...off].sort().join(',')}|${[...allow].sort().join(',')}`;
+    if (state && !force && polKey === appliedPolicy && now - checkedAt < recheckMs) return state;
     checkedAt = now;
-    const s = signature(dirs);
+    const s = `${signature(dirs)}|${polKey}`;
     if (state && s === sig) return state;
     const first = !state;
     sig = s;
+    appliedPolicy = polKey;
     const scan = scanPacks(dirs, { app });
-    state = { ...scan, index: packIndexOf(scan.packs, { app }), byId: new Map(scan.packs.map((p) => [p.id, p])) };
-    const line = `[packs] ${scan.packs.length ? scan.packs.map((p) => `${p.type} ${p.type === 'lang' ? p.manifest.lang : p.id} (${p.manifest.name})`).join(', ') : 'none'}`;
-    if (first || scan.packs.length) tell((m) => log.info(m), line);
+    /** @type {Pack[]} */
+    const packs = [];
+    /** @type {Denied[]} */
+    const denied = [];
+    for (const p of scan.packs) {
+      const entry = { id: p.id, type: p.type, name: p.manifest.name, version: p.manifest.version || '', app: p.manifest.app || '', compatible: p.manifest.compatible !== false, where: p.where };
+      // A type that is not live (the data type: its tables are fixed at start) is judged by the policy the process
+      // started with, so its loaded state here always matches the tables the simulation is really running on.
+      const live = PACK_TYPES[p.type]?.live !== false;
+      const offHere = live ? off : startPolicy.off;
+      const allowHere = live ? allow : startPolicy.allow;
+      if (offHere.has(p.id)) denied.push({ ...entry, reason: 'off' });
+      else if (entry.compatible === false && isIdentityPack(p.manifest) && !allowHere.has(p.id)) denied.push({ ...entry, reason: 'unconfirmed' });
+      else packs.push(p);
+    }
+    state = { ...scan, packs, denied, index: packIndexOf(packs, { app }), byId: new Map(packs.map((p) => [p.id, p])) };
+    const line = `[packs] ${packs.length ? packs.map((p) => `${p.type} ${p.type === 'lang' ? p.manifest.lang : p.id} (${p.manifest.name})`).join(', ') : 'none'}`;
+    if (first || packs.length) tell((m) => log.info(m), line);
+    for (const d of denied) {
+      tell((m) => log.warn(m), d.reason === 'off'
+        ? `[packs] ${d.type} ${d.id} is turned off by the server owner (runtime/server-settings.json, /admin)`
+        : `[packs] ${d.type} ${d.id} (app ${d.app || 'any'}) is outside this server's app range and changes the game: not loaded until the owner confirms it in /admin`);
+    }
     for (const k of scan.skipped) tell((m) => log.warn(m), `[packs] ${k.where} skipped: ${k.problems.join('; ')}`);
     for (const w of scan.warnings) tell((m) => log.warn(m), `[packs] ${w.where}: ${w.warning}`);
     return state;
@@ -304,15 +352,34 @@ export function createPackRegistry(dirs, { log = { info: noop, warn: noop }, app
     /** The index body (GET /packs/index.json). */
     index: () => refresh().index,
     /** Packs that were not loaded and why, and the warnings of the loaded ones. */
-    report: () => { const s = refresh(); return { skipped: s.skipped, warnings: s.warnings }; },
+    report: () => { const s = refresh(); return { skipped: s.skipped, warnings: s.warnings, denied: s.denied }; },
+    /**
+     * Every pack the folders hold, with whether the owner's policy lets it load — what the /admin 内容包 panel shows.
+     * @returns {{ policy: { off: string[], allow: string[] } | null, packs: (Denied & { enabled: boolean })[] }}
+     */
+    overview() {
+      const s = refresh();
+      const pol = typeof policy === 'function' ? policy() || null : policy || null;
+      const packs = s.packs.map((p) => ({
+        id: p.id, type: p.type, name: p.manifest.name, version: p.manifest.version || '', app: p.manifest.app || '',
+        compatible: p.manifest.compatible !== false, where: p.where, enabled: true, reason: null, live: PACK_TYPES[p.type]?.live !== false,
+        bytes: p.bytes, overrides: p.overrides?.length || 0, patches: p.patches?.length || 0, strings: p.strings || 0,
+      }));
+      for (const d of s.denied) packs.push({ ...d, enabled: false, live: PACK_TYPES[d.type]?.live !== false });
+      return {
+        policy: pol ? { off: [...(pol.off || [])], allow: [...(pol.allow || [])] } : null,
+        packs: packs.sort((a, b) => (a.type === b.type ? (a.id < b.id ? -1 : 1) : a.type < b.type ? -1 : 1)),
+      };
+    },
     /**
      * The content identity of this server (shared/contentTag.js): the packs in force and one short tag over them. What
      * GET /healthz reports as `mods`, and what a client compares with the tag it computes from the index it loaded.
      */
     content() {
+      // Canonical order (type, then id — the index's order), so /healthz, the log and the panel never disagree about it.
       const identity = refresh().packs.filter((p) => p.supported && isIdentityPack(p.manifest)).map((p) => ({
         type: p.type, id: p.id, version: p.manifest.version || '', compatible: p.manifest.compatible !== false, bytes: p.bytes,
-      }));
+      })).sort((a, b) => (a.type === b.type ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.type < b.type ? -1 : 1));
       const languages = refresh().packs.filter((p) => p.supported && !isIdentityPack(p.manifest)).length;
       return {
         tag: contentTag(APP_VERSION, identity),

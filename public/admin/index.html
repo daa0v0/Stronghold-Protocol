@@ -118,12 +118,30 @@
       <p id="rooms-empty" class="dim">当前没有房间。</p>
     </section>
 
+    <!-- 内容包（mod） -->
+    <section class="panel">
+      <h2>内容包 <span id="packs-count" class="badge badge--dim">0</span>
+        <span id="packs-tag" class="badge badge--dim mono">—</span></h2>
+      <p class="dim">服务器级开关：停用的包不加载、不下发、也不算进内容标识；不兼容且会改变玩法的包默认被扣住，确认后才加载。
+        改动写入 <code>runtime/server-settings.json</code>（该仓库唯一允许面板写入的设置）并立即生效，玩家刷新页面即可看到。
+        语言包是客户端自身的一部分（其他语言还要回退到英文），因此不能停用。</p>
+      <div class="tablewrap">
+        <table id="packs">
+          <thead>
+            <tr><th>类型</th><th>ID</th><th>名称</th><th>版本</th><th>适用版本</th><th>状态</th><th>内容</th><th></th></tr>
+          </thead>
+          <tbody id="packs-body"></tbody>
+        </table>
+      </div>
+      <p id="packs-empty" class="dim">没有安装内容包。</p>
+    </section>
+
     <!-- 只读信息 -->
     <section class="grid">
       <article class="card">
         <h3>服务器设置（只读）</h3>
         <pre id="info-settings" class="mono">—</pre>
-        <p class="dim">修改请用 CLI：<code>node tools/server-settings.mjs …</code>（该仓库明确不为设置提供 HTTP 写入）。</p>
+        <p class="dim">修改请用 CLI：<code>node tools/server-settings.mjs …</code>（设置默认只由 CLI 写入；内容包开关是唯一的例外）。</p>
       </article>
       <article class="card">
         <h3>素材预缓存</h3>
@@ -140,7 +158,7 @@
     </section>
 
     <footer class="foot dim">
-      只读监控 + 三个显式动作（广播 / 维护模式 / 关闭房间）。服务器设置由 CLI 写入，见
+      只读监控 + 四个显式动作（广播 / 维护模式 / 关闭房间 / 内容包开关）。其余服务器设置由 CLI 写入，见
       <code>docs/ADMIN.md</code>。
     </footer>
   </main>

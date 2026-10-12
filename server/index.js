@@ -84,10 +84,16 @@ export async function startServer(opts = {}) {
   const log = adminSecret.secret ? withLogRing(baseLog, logRing) : baseLog;
   const { publicDir, dataDir, sharedDir, packsDir } = serveDirs(opts);
 
+  // The owner's private settings (runtime/server-settings.json, /admin) come first: the pack registry reads their
+  // content-pack policy on every scan (docs/PACKS.md §4).
+  const serverSettings = createServerSettings({ dir: opts.serverSettingsDir, root: ROOT, log,
+    onChange: (next) => applySettings(next) });
+
   // content packs (docs/PACKS.md): scanned first — the start log names them, and a "data" pack's patches belong to the
   // tables the match and the simulation run on (and to the same tables /data/<name>.json serves) — and again whenever
   // their folders change.
-  const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log });
+  const packs = createPackRegistry({ publicDir, dataDir, packsDir }, { log,
+    policy: () => serverSettings.get().packs });
   packs.refresh(true);
   // The content identity of this server (docs/PACKS.md §4; shared/contentTag.js): one tag over the packs in force, in the
   // start log, in GET /healthz (clients compare it with the tag they compute from the index) and on the returned object.
@@ -99,8 +105,6 @@ export async function startServer(opts = {}) {
   const dataPacks = applyDataPacks(baseData, packs.list('data'), { log, known: DATA_FILES });
   const data = dataPacks.tables;
   const dataPackTagValue = dataPackTag(dataPacks, (t) => createHash('sha256').update(t).digest('hex'));
-  const serverSettings = createServerSettings({ dir: opts.serverSettingsDir, root: ROOT, log,
-    onChange: (next) => applySettings(next) });
   const { registry, lobby, network } = createSessionStack(opts, { data, log });
   const announcements = createAnnouncementStore({ dir: opts.announcementsDir, root: ROOT, log });
   const announcementNotices = createAnnouncementNoticeMonitor({ store: announcements, network, log });
@@ -125,6 +129,9 @@ export async function startServer(opts = {}) {
     assetCache.setLimits(next.assetCacheLimits ?? fallbackAssetCacheLimits);
     // Runtime enabling fails closed until a summary is ready; ordinary optional startup stays lazy.
     if (next.requireAssetCache && !assetCache.currentSummary()) void warmAssetSummary();
+    // A content-pack policy change (off / allow, docs/PACKS.md §4) takes effect at once: the registry re-reads the
+    // folders and applies the policy in the same tick, so the index, /healthz.mods and the served pack files follow.
+    packs.refresh(true);
   }
   applySettings(serverSettings.get());
   if (serverSettings.get().requireAssetCache) await warmAssetSummary();
@@ -156,7 +163,7 @@ export async function startServer(opts = {}) {
   });
   const adminService = createAdminService({
     enabled: !!adminSecret.secret, secret: adminSecret.secret, secretSource: adminSecret.source, problem: adminSecret.problem,
-    lobby, network, registry, bandwidthEmergency, assetCache, serverSettings, announcements,
+    lobby, network, registry, bandwidthEmergency, assetCache, serverSettings, announcements, packs, settingsDir: serverSettings.dir,
     ring: logRing, log, startedAt, build: buildTag,
   });
   const admin = createAdminHandler({ admin: adminService, serveStatic, log });

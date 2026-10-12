@@ -61,10 +61,24 @@ sudo systemctl restart stronghold
 | POST | `/api/admin/broadcast` | `{ text, kind }` → 给**每个在线连接**推一条提示（`kind`: `info`/`success`/`warn`/`error`），同时进顶部滚动条。text 上限 300 字（超长截断，不报错），空白返回 400 |
 | POST | `/api/admin/maintenance` | `{ on: true|false }` → 维护模式开关。**响应先发、开关后生效**（见下） |
 | POST | `/api/admin/rooms/close` | `{ code }` → 关掉一个房间，里面的人收到 `room.closed{reason:"admin"}` 回到大厅；房间不存在返回 404 |
+| GET | `/api/admin/packs` | 每个内容包一条：类型、ID、名称、版本、声明的 `app` 范围、是否 `compatible`、**是否已加载/被停用/待确认**、是否 `live`、内容量（替换项/补丁表/文案数）、扫描位置；另有当前策略 `policy` 与内容标识 `tag`、语言包数量 `languages` |
+| POST | `/api/admin/packs` | 改内容包策略（见 §5）：`{ id, enabled }` 开关一个包、`{ id, confirmed: true }` 确认加载一个不兼容的包、或 `{ off: [], allow: [] }` 整体替换。返回更新后的同一份列表；涉及非实时类型时带 `restartRequired: true` |
 
-错误码：`400 BAD_BODY`、`401 UNAUTHORIZED`/`BAD_SECRET`、`404 NOT_FOUND`（未知端点或房间不存在）、`405 METHOD_NOT_ALLOWED`（已知端点用了错方法）、`413 BODY_TOO_LARGE`（> 8 KB）、`429 TOO_MANY_ATTEMPTS`、`503 UNAVAILABLE`（本部署没有带宽控制，无法维护模式）。
+错误码：`400 BAD_BODY`、`401 UNAUTHORIZED`/`BAD_SECRET`、`404 NOT_FOUND`（未知端点、房间不存在，或 `packs` 里给了未知的包 ID）、`405 METHOD_NOT_ALLOWED`（已知端点用了错方法）、`409 LANGUAGE_LOCKED`（想停用语言包）、`413 BODY_TOO_LARGE`（> 8 KB）、`429 TOO_MANY_ATTEMPTS`、`500 WRITE_FAILED`（设置文件写不进去）、`503 UNAVAILABLE`（本部署没有带宽控制，无法维护模式 / 没有包注册表）。
 
-## 5. 维护模式到底做了什么
+## 5. 内容包开关（本仓库对"设置只由 CLI 写"的唯一例外）
+
+`serverSettings.js` 的原则是**服务器设置没有 HTTP 写入端点**：面板只展示，改动由 `node tools/server-settings.mjs …` 写。本仓库（2026-10-12，服主决定）为**内容包策略**开了唯一一个例外——mod 是运行中会反复开关的运维动作，从面板点比每次登服务器改文件现实。除此之外的一切设置仍然只由 CLI 写。
+
+- 写入同一个文件、同一个校验器、同一个原子写入器（`serverSettings.js writeServerSettings`），所以 CLI 与面板永远一致。
+- 策略内容：`off` = 本服务器不加载（不出现在索引、不下发文件、不计入内容标识）；`allow` = 版本范围不兼容但仍要加载。
+- **语言包不能停用**（409 `LANGUAGE_LOCKED`）：它是客户端自身的一部分，且其他语言要回退到英文。
+- **不兼容的包**：改变玩法的类型（`assets`/`data`）默认被扣住，点「确认加载」后才加载；不兼容的**语言包**照旧加载并标记（只影响文案，缺的会回退）。
+- **生效时机**：`assets` 立即生效（索引、内容标识、文件下发同步变化）；`data` 需要**重启**（它的表在进程启动时就固定了），面板会显示「重启后生效」——这样索引、内容标识和 `/data/<name>.json` 永远不会互相矛盾。
+- 每次改动都写日志（`[admin] 内容包策略：…`），并可从 `docs/PACKS.md` §4「The owner's switches」查到完整语义。
+
+
+## 6. 维护模式到底做了什么
 
 开启后：
 
@@ -77,7 +91,7 @@ sudo systemctl restart stronghold
 
 `POST /api/admin/maintenance` 的响应总是先发出，再真正切换保护状态——因为开启保护会断开普通 HTTP 连接，如果先切，触发这个动作的请求自己就会被切断，控制台会报"网络错误"而其实已经成功。
 
-## 6. 安全建议
+## 7. 安全建议
 
 1. **一定要 TLS**。没有 HTTPS 时密钥和 Cookie 是明文，公网上等于公开。
 2. 反向代理里再限制一层来源 IP：`deploy/nginx-stronghold.conf` 里 `/admin` 与 `/api/admin/` 两段有 `allow`/`deny` 模板（默认是示例 IP，**记得改**）。
@@ -85,7 +99,7 @@ sudo systemctl restart stronghold
 4. 不要把密钥贴进 Issue、截图或 shell 历史；轮换就是改文件内容 + `systemctl restart stronghold`。
 5. 关掉后台 = 把 `ADMIN_SECRET`/`ADMIN_SECRET_FILE` 都清掉并重启（回到 404）。
 
-## 7. 快速验证（curl）
+## 8. 快速验证（curl）
 
 ```bash
 BASE=https://game.example.com
@@ -109,16 +123,15 @@ curl -s -H "Authorization: Bearer $SECRET" -H 'content-type: application/json' -
 curl -s -H "Authorization: Bearer $SECRET" -H 'content-type: application/json' -d '{"on":false}' $BASE/api/admin/maintenance
 ```
 
-## 8. 已知未做（有意保持小）
+## 9. 已知未做（有意保持小）
 
-- **不能改服务器设置**：只读展示，写入在 CLI（见 §1 第 2 条）。
+- **不能改服务器设置（一个例外）**：设置默认只读展示、写入在 CLI（见 §1 第 2 条）；唯一的例外是**内容包策略**（§5），它是运行中会反复开关的运维动作，所以 /admin 可以直接写。
 - **不能踢单个玩家**：只能关整个房间（`rooms/close`）。房主自己可以在游戏里踢人。
 - **不改房间容量/difficulty**：这些是房主的权力，后台不越权。
 - **没有审计日志文件**：动作会写进服务端日志（`journalctl -u stronghold`），但不会单独落盘。
 - 需要这些的话，扩展点在 `server/admin.js`（服务）+ `server/http/admin.js`（路由）+ `public/admin/admin.js`（面板），三层都很小。
 
-## 9. 相关
-
+## 10. 相关
 - 部署：[DEPLOY-LINUX.md](DEPLOY-LINUX.md)、[DEPLOY-QUICKSTART.md](DEPLOY-QUICKSTART.md)
 - 素材预缓存（后台能看到状态）：[ASSET_CACHE.md](ASSET_CACHE.md)
 - 服务器设置（后台只读的那些值）：`tools/server-settings.mjs --help`

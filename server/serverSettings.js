@@ -4,11 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { MAX_SEATS } from '../shared/constants.js';
+import { isPackId } from '../shared/packs.js';
 import { ROOT } from './http/config.js';
 
 export const SERVER_SETTINGS_FILE = 'server-settings.json';
 export const SERVER_SETTINGS_POLL_MS = 1000;
 const MAX_FILE_BYTES = 4096;
+const MAX_POLICY_IDS = 512;
+const SETTINGS_KEYS = ['version', 'maxAiPerRoom', 'requireAssetCache', 'assetCacheLimits', 'packs'];
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 /** null means no server restriction; available room seats still bound the AI count. */
@@ -50,8 +53,34 @@ export function validAssetCacheLimits(value) {
     && !(value.clientBps === 0 && value.totalBps !== 0));
 }
 
-function initialAssetCacheLimits(env) {
-  const total = String(env.SP_ASSET_CACHE_TOTAL_BPS ?? '').trim();
+/**
+ * The owner's content-pack policy (docs/PACKS.md §4; set from /admin): the ids turned **off** for this server, and the
+ * ids explicitly **allowed** to load although they are outside their declared app range. null = no policy (every pack
+ * that is compatible loads, and an incompatible one that changes the game is held back until the owner confirms it).
+ */
+export function validPackPolicy(value) {
+  if (value === null || value === undefined || value === false) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (Object.keys(value).some((key) => !['off', 'allow'].includes(key))) return false;
+  for (const key of ['off', 'allow']) {
+    const list = value[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list) || list.length > MAX_POLICY_IDS) return false;
+    if (!list.every((id) => isPackId(id)) || new Set(list).size !== list.length) return false;
+  }
+  return true;
+}
+
+/** null (no policy) or a frozen `{ off, allow }` with frozen lists. An empty policy IS no policy: one state, one shape. */
+function checkedPackPolicy(raw) {
+  if (raw === null || raw === undefined) return null;
+  const off = [...(raw.off || [])];
+  const allow = [...(raw.allow || [])];
+  if (!off.length && !allow.length) return null;
+  return Object.freeze({ off: Object.freeze(off), allow: Object.freeze(allow) });
+}
+
+function initialAssetCacheLimits(env) {  const total = String(env.SP_ASSET_CACHE_TOTAL_BPS ?? '').trim();
   const client = String(env.SP_ASSET_CACHE_CLIENT_BPS ?? '').trim();
   if (!total && !client) return null;
   const parsed = { totalBps: total ? parseAssetCacheByteRate(total) : null, clientBps: client ? parseAssetCacheByteRate(client) : null };
@@ -86,13 +115,16 @@ function verifyDirectory(dir) {
 
 function checkedSettings(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1
-    || Object.keys(raw).some((key) => !['version', 'maxAiPerRoom', 'requireAssetCache', 'assetCacheLimits'].includes(key))
+    || Object.keys(raw).some((key) => !SETTINGS_KEYS.includes(key))
     || !validAiLimit(raw.maxAiPerRoom)
     || raw.requireAssetCache !== undefined && typeof raw.requireAssetCache !== 'boolean'
-    || raw.assetCacheLimits !== undefined && !validAssetCacheLimits(raw.assetCacheLimits)) throw new Error('服务器配置格式无效');
-  // Existing version-1 AI-only files keep their former permissive admission policy.
+    || raw.assetCacheLimits !== undefined && !validAssetCacheLimits(raw.assetCacheLimits)
+    || !validPackPolicy(raw.packs)) throw new Error('服务器配置格式无效');
+  const packs = checkedPackPolicy(raw.packs);
+  // Existing version-1 AI-only files keep their former permissive admission policy — and keep their exact shape: the
+  // content-pack policy (`packs`) only appears once an owner has set one, so an untouched server reads as it always did.
   return Object.freeze({ maxAiPerRoom: raw.maxAiPerRoom, requireAssetCache: raw.requireAssetCache ?? false,
-    assetCacheLimits: raw.assetCacheLimits ?? null });
+    assetCacheLimits: raw.assetCacheLimits ?? null, ...(raw.packs === undefined ? null : { packs }) });
 }
 
 /** Read-only startup and show operations never create a directory. null means no persistent override. */
@@ -121,7 +153,10 @@ export function writeServerSettings(dir, value) {
   if (Object.hasOwn(patch, 'assetCacheLimits') && !validAssetCacheLimits(patch.assetCacheLimits)) {
     throw new RangeError('素材在线限速配置无效');
   }
-  if (!Object.keys(patch).length || Object.keys(patch).some((key) => !['maxAiPerRoom', 'requireAssetCache', 'assetCacheLimits'].includes(key))
+  if (Object.hasOwn(patch, 'packs') && !validPackPolicy(patch.packs)) {
+    throw new RangeError('内容包策略无效：只允许 off / allow 两个 id 列表');
+  }
+  if (!Object.keys(patch).length || Object.keys(patch).some((key) => !['maxAiPerRoom', 'requireAssetCache', 'assetCacheLimits', 'packs'].includes(key))
     || Object.hasOwn(patch, 'requireAssetCache') && typeof patch.requireAssetCache !== 'boolean') throw new Error('服务器配置字段无效');
   fs.mkdirSync(dir, { recursive: true });
   verifyDirectory(dir);
@@ -158,7 +193,8 @@ export function writeServerSettings(dir, value) {
  * policy, so a partial manual edit cannot silently disable a restriction. Removing the file explicitly restores
  * the startup fallback. onChange is not invoked while constructing the controller.
  * @param {{ dir?: string, root?: string, env?: object, log?: {warn?: Function}, pollMs?: number,
- *   onChange?: (next: {maxAiPerRoom:number|null, requireAssetCache:boolean, assetCacheLimits:object|null}, previous: object) => void }} [options]
+ *   onChange?: (next: {maxAiPerRoom:number|null, requireAssetCache:boolean, assetCacheLimits:object|null,
+ *     packs:{off:readonly string[],allow:readonly string[]}|null}, previous: object) => void }} [options]
  */
 export function createServerSettings(options = {}) {
   const { env = process.env, log = console, pollMs = SERVER_SETTINGS_POLL_MS, onChange } = options;
@@ -183,7 +219,8 @@ export function createServerSettings(options = {}) {
       return false;
     }
     if (next.maxAiPerRoom === state.maxAiPerRoom && next.requireAssetCache === state.requireAssetCache
-      && JSON.stringify(next.assetCacheLimits) === JSON.stringify(state.assetCacheLimits)) return false;
+      && JSON.stringify(next.assetCacheLimits) === JSON.stringify(state.assetCacheLimits)
+      && JSON.stringify(next.packs) === JSON.stringify(state.packs)) return false;
     const previous = state;
     state = next;
     if (notify) onChange?.(state, previous);
