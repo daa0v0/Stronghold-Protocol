@@ -79,7 +79,7 @@ else
 fi
 if [ -d "$APP_DIR/node_modules/ws" ]; then ok "依赖已安装（node_modules/ws 存在）"; else bad "依赖没装：npm ci --omit=dev"; fi
 if [ -f "$APP_DIR/node_modules/@zip.js/zip.js/dist/zip-native.min.js" ]; then ok "客户端压缩库 @zip.js 已安装"; else warn "@zip.js 不在 node_modules（素材预缓存 worker 会不可用）：npm ci --omit=dev"; fi
-if [ -d "$APP_DIR/node_modules/eslint" ]; then ok "devDependencies 也在（可以在这台机器跑 node --test）"; else warn "devDependencies 未安装：跑测试需要 npm ci（不带 --omit=dev）"; fi
+if [ -d "$APP_DIR/node_modules/eslint" ]; then ok "devDependencies 也在（可以在这台机器跑 node --test）"; else warn "devDependencies 未安装——服务器上这是正常的（update-linux.sh 用 --omit=dev 装生产依赖）；只有想在这台机器跑 node --test 才需要 npm ci"; fi
 
 # ---- 3. 客户端 vendor --------------------------------------------------------------------------
 head_ "3. 客户端 vendor（public/vendor，由 tools/vendor.mjs 生成）"
