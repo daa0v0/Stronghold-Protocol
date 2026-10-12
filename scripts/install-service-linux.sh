@@ -3,7 +3,8 @@
 #
 # 幂等：可以重复执行（已存在的用户/密钥/env 不会被覆盖）。
 # 用法：
-#   sudo APP_DIR=/opt/stronghold ./scripts/install-service-linux.sh
+#   sudo APP_DIR=/opt/stronghold sh scripts/install-service-linux.sh
+#   （写 ./scripts/… 也行，但要求脚本有可执行位；从 Windows 打的 zip 解压出来没有）
 #
 # 它做四件事：找 Node → 建运行用户与可写目录 → 生成/保留 ADMIN_SECRET → 安装并启动 systemd 单元。
 # 它不下载素材、不装 Node：那两步见 docs/DEPLOY-LINUX.md 第 1、2 步（要联网、可能要几分钟）。
@@ -103,7 +104,7 @@ BOUND=$(sed -n 's/^HOST=//p' "$ENV_DIR/stronghold.env")
 P=$(sed -n 's/^PORT=//p' "$ENV_DIR/stronghold.env")
 say ""
 say "下一步："
-say "  1) 自检    : $APP_DIR/scripts/preflight-linux.sh"
+say "  1) 自检    : sudo sh $APP_DIR/scripts/preflight-linux.sh"
 say "  2) 本机探活: curl -s http://127.0.0.1:${P}/healthz"
 say "  3) 后台密钥: sudo cat $ENV_DIR/admin.secret   （浏览器打开 /admin 登录用）"
 if [ "$BOUND" = "127.0.0.1" ]; then

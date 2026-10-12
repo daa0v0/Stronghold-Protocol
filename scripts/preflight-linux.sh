@@ -5,8 +5,9 @@
 # 生产依赖没装、public/vendor 没生成、素材缺、runtime 不可写、防火墙没放行、后台密钥没配、
 # systemd 单元语法错）都能在这里一次性看出来。
 #
-# 用法：cd <项目目录> && ./scripts/preflight-linux.sh
-#      sudo PORT=3000 ./scripts/preflight-linux.sh      # 带 sudo 能多看几项（防火墙、端口占用者）
+# 用法：cd <项目目录> && sh scripts/preflight-linux.sh
+#      sudo PORT=3000 sh scripts/preflight-linux.sh      # 带 sudo 能多看几项（防火墙、端口占用者）
+#      （写 ./scripts/… 也行，但要求脚本有可执行位；从 Windows 打的 zip 解压出来没有，见下面第 0 节）
 # 退出码：0 = 全部通过（可能有警告）；1 = 有 FAIL 项需要处理。
 set -u
 
@@ -179,7 +180,7 @@ if [ -f "$UNIT" ]; then
     if systemctl is-enabled --quiet "$SERVICE" 2>/dev/null; then ok "已设为开机自启"; else warn "未设开机自启：systemctl enable $SERVICE"; fi
   fi
 else
-  warn "没装 systemd 单元（$UNIT）。想用 systemd 托管：sudo ./scripts/install-service-linux.sh"
+  warn "没装 systemd 单元（$UNIT）。想用 systemd 托管：sudo sh scripts/install-service-linux.sh"
 fi
 
 # ---- 8. 端口与防火墙 ---------------------------------------------------------------------------

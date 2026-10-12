@@ -4,7 +4,7 @@
 # 顺序：拉代码 → 按 lock 重装生产依赖 → 重新生成 public/vendor → 重启服务 → 探活。
 # 注意：`npm ci --omit=dev` 会把 devDependencies（eslint/typescript/puppeteer）清掉，这正是服务器上想要的。
 #      想在服务器上跑 `node --test` 的话，改成本脚本末尾提示的 `npm ci`（带 dev）。
-# 用法：cd /opt/stronghold && sudo ./scripts/update-linux.sh
+# 用法：cd /opt/stronghold && sudo sh scripts/update-linux.sh
 set -eu
 
 APP_DIR=${APP_DIR:-$(cd "$(dirname "$0")/.." && pwd)}

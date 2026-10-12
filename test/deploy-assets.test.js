@@ -112,6 +112,23 @@ test('the docs invoke the Linux scripts as `sh scripts/x.sh`, which needs no exe
   }
 });
 
+test('the ops scripts never tell the user to run ./scripts/<script>.sh either', () => {
+  // Their own usage comments and runtime hints matter as much as the guides: a copy extracted from a Windows-built zip
+  // has no executable bit, so a hint that says `./scripts/x.sh` sends the user straight back into "Permission denied".
+  // Naming a script that does not exist (the `./scripts/x.sh` in the explanation of the failure mode) is fine.
+  const names = scriptFiles().filter((f) => f.endsWith('.sh'));
+  const real = new Set(names);
+  let placeholders = 0;
+  for (const name of names) {
+    const src = read(path.join('scripts', name));
+    for (const m of src.matchAll(/\.\/scripts\/([A-Za-z0-9_\-.]+\.sh)/g)) {
+      if (!real.has(m[1])) { placeholders++; continue; }
+      assert.fail(`scripts/${name} tells the user to run ./scripts/${m[1]} — use \`sh scripts/${m[1]}\``);
+    }
+  }
+  assert.ok(placeholders >= 1, 'the explanation of the failure mode should still show the ./ form it warns about');
+});
+
 test('the Linux and Windows ops scripts exist in pairs and both are documented', () => {
   const quickstart = read('docs/DEPLOY-QUICKSTART.md');
   const pairs = [
