@@ -2,7 +2,7 @@
 // scripts/launch.mjs — cross-platform "prepare + start + open the browser", used by scripts/start-windows.bat,
 // scripts/start-windows.ps1 and scripts/start.sh (docs/DEPLOY.md).
 //
-//   node scripts/launch.mjs [--port 3000] [--host ::] [--no-open] [--no-setup] [setup options…]
+//   node scripts/launch.mjs [--port 3000] [--host ::] [--no-open] [--no-setup] [--no-admin] [setup options…]
 //
 //   1. If our server already answers on the port, just open the browser (double-clicking twice is harmless).
 //   2. An update package extracted over the folder (UPDATE.json) is finished (server/update.js; the server does it too,
@@ -34,7 +34,7 @@ const { probePort, classifyAddresses, hostUrl, KIND_LABEL } = await import('../t
 const { applyPendingUpdate, UPDATE_FILE } = await import('../server/update.js');
 
 function parseArgs(argv) {
-  const o = { port: Number(process.env.PORT) || 3000, host: process.env.HOST || '::', open: !/^(1|true|yes)$/i.test(process.env.SP_NO_BROWSER || ''), setup: true, setupArgs: [], help: false };
+  const o = { port: Number(process.env.PORT) || 3000, host: process.env.HOST || '::', open: !/^(1|true|yes)$/i.test(process.env.SP_NO_BROWSER || ''), setup: true, admin: true, setupArgs: [], help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const [k, v] = a.split('=');
@@ -43,6 +43,7 @@ function parseArgs(argv) {
     else if (k === '--host') o.host = val() || o.host;
     else if (a === '--no-open') o.open = false;
     else if (a === '--no-setup') o.setup = false;
+    else if (a === '--no-admin') o.admin = false;
     else if (a === '-h' || a === '--help') o.help = true;
     else if (a === '--game') o.setupArgs.push(a, argv[++i] ?? '');
     else o.setupArgs.push(a);
@@ -114,6 +115,14 @@ async function main() {
   }
 
   const env = { ...process.env, PORT: String(o.port), HOST: o.host };
+  // 运维后台密钥 (docs/ADMIN.md §2): without one, /admin answers 404 and the console is the only place that explains why.
+  // Ask the operator on the first run (Enter = generate a 64-character secret into runtime/admin.secret), never fatal, and
+  // skippable with --no-admin for a run that wants the console deterministically off. Before the server starts, so the
+  // secret is in force for this run rather than the next one.
+  if (o.admin) {
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'admin-secret.mjs'), 'ensure'], { cwd: ROOT, stdio: 'inherit' });
+    if (r.status !== 0) console.log(c.dim('（未能写入 runtime/admin.secret：/admin 会保持关闭，见 docs/ADMIN.md §2）'));
+  }
   const child = spawn(process.execPath, [path.join(ROOT, 'server', 'index.js')], { cwd: ROOT, env, stdio: 'inherit' });
   const forward = (sig) => { if (child.exitCode === null) { try { child.kill(sig); } catch { /* gone */ } } };
   // SIGINT reaches the server straight from the terminal (same process group / console); forwarding it too would make

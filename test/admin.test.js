@@ -3,14 +3,19 @@
 // server protects itself, and every write is bounded and throttled.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
 import { startServer } from '../server/index.js';
 import { TestClient } from './helpers/wsClient.js';
 
 const SECRET = 'unit-test-admin-secret-value';
+/** A path no machine has a secret at: the default source (docs/ADMIN.md §2) must not leak in from the developer's box. */
+const NO_SECRET_FILE = path.join(os.tmpdir(), 'sp-admin-test-no-such-secret');
 
 /** Start a server on a random port, optionally with the console enabled. */
 async function makeServer(opts = {}) {
-  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, adminSecret: opts.adminSecret ?? '', ...opts.extra });
+  const srv = await startServer({ port: 0, host: '127.0.0.1', quiet: true, adminSecret: opts.adminSecret ?? '',
+    adminSecretFile: opts.adminSecretFile ?? NO_SECRET_FILE, ...opts.extra });
   return srv;
 }
 

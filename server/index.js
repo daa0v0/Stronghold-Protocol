@@ -77,18 +77,23 @@ export async function startServer(opts = {}) {
   const emergencyOptions = bandwidthEmergencyOptions(opts.bandwidthEmergency === false ? { enabled: false } : opts.bandwidthEmergency || {});
   const { port, host } = listenAddress(opts);
   const baseLog = opts.log || makeLogger(!!opts.quiet);
+  const { publicDir, dataDir, sharedDir, packsDir, modsDir, adminSecretFile } = serveDirs(opts);
   // 运维后台 (docs/ADMIN.md): mirror the process log into a bounded ring so the console can show recent lines. A new
   // logger object wraps it (never the caller's object, which may be a shared singleton). Off unless a secret is set.
-  // `opts.adminSecret` is for tests and embedders; the environment (ADMIN_SECRET / ADMIN_SECRET_FILE) is the normal path.
-  const adminSecret = readAdminSecret(opts.adminSecret ? { ...process.env, ADMIN_SECRET: String(opts.adminSecret), ADMIN_SECRET_FILE: '' } : process.env);
+  // `opts.adminSecret` is for tests and embedders; the environment (ADMIN_SECRET / ADMIN_SECRET_FILE) and the default file
+  // (runtime/admin.secret, tools/admin-secret.mjs) are the normal paths.
+  const adminSecret = readAdminSecret(
+    opts.adminSecret ? { ...process.env, ADMIN_SECRET: String(opts.adminSecret), ADMIN_SECRET_FILE: '' } : process.env,
+    { defaultFile: opts.adminSecret ? '' : adminSecretFile },
+  );
   const logRing = createLogRing();
   const log = adminSecret.secret ? withLogRing(baseLog, logRing) : baseLog;
   // Say WHY it is off, once, in the console. A missing secret means /admin and /api/admin/* answer 404 exactly like any
   // other unknown path (docs/ADMIN.md §1 — no default password, and the 404 must not announce that a console exists), so
-  // without this line the only symptom is a 404 with no explanation anywhere. `reason` is the operator's next step.
+  // without this line the only symptom is a 404 with no explanation anywhere. The message names the next step.
+  const sourceName = { env: 'ADMIN_SECRET', file: 'ADMIN_SECRET_FILE', default: 'runtime/admin.secret' }[adminSecret.source] || '';
   if (!adminSecret.secret) log.info(`[admin] 后台关闭：${adminSecret.problem}（docs/ADMIN.md §2 说明如何开启；配好后重启）`);
-  else log.info(`[admin] 后台已启用（密钥来源：${adminSecret.source === 'file' ? 'ADMIN_SECRET_FILE' : 'ADMIN_SECRET'}）`);
-  const { publicDir, dataDir, sharedDir, packsDir, modsDir } = serveDirs(opts);
+  else log.info(`[admin] 后台已启用（密钥来源：${sourceName}）`);
 
   // The owner's private settings (runtime/server-settings.json, /admin) come first: the pack registry reads their
   // content-pack policy on every scan (docs/PACKS.md §4).

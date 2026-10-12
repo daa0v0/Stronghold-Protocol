@@ -11,6 +11,45 @@
 
 ## 2. 启用
 
+密钥按下面的顺序读取，**先命中的赢**（`server/admin.js readAdminSecret`）：
+
+| 顺序 | 来源 | 谁写它 |
+|---|---|---|
+| 1 | 环境变量 `ADMIN_SECRET` | 你（Docker、临时运行） |
+| 2 | 环境变量 `ADMIN_SECRET_FILE` 指向的文件 | 你 / systemd 凭据 / `scripts/install-service-linux.sh` |
+| 3 | **`runtime/admin.secret`**（本机默认文件，已在 `.gitignore` 里） | `tools/admin-secret.mjs`（**本地启动脚本首次运行时会问你**）、`scripts/install-service-windows.ps1` |
+
+### 第一次运行会问你
+
+用 `scripts/start-windows.bat` / `start-windows.ps1` / `scripts/start.sh` 启动时，会先跑
+`node tools/admin-secret.mjs ensure`（`scripts/launch.mjs` 的第 4 步之前）：
+
+```
+首次运行：请设置运维后台（/admin）的密钥。
+  · 直接回车 = 自动生成 64 位随机密钥（推荐，稍后显示一次，请存到密码管理器）
+  · 或粘贴你自己的密钥（至少 16 个字符）
+密钥：
+```
+
+之后 `/admin` 就是登录页：**输入正确密钥进入控制台，输错显示「密钥无效。」**（连续错 8 次进限流）。
+没有终端（服务、CI、管道）时它会直接生成一个并写进文件，而不是把后台留成关闭。
+给 `scripts/launch.mjs` 加 `--no-admin` 可以跳过这一步（用于"就是要后台关闭"的场景）。
+
+### 手动设置 / 查看 / 更换
+
+```bash
+node tools/admin-secret.mjs show              # 现在从哪来、是否生效（默认不打印密钥本身）
+node tools/admin-secret.mjs show --reveal     # 连同密钥一起打印（忘了密钥时用）
+node tools/admin-secret.mjs set               # 交互式设置（回车 = 自动生成）
+node tools/admin-secret.mjs set --generate    # 直接生成一个新的
+node tools/admin-secret.mjs rotate            # 换一个：已登录的会话立即失效
+node tools/admin-secret.mjs off               # 删除默认文件，后台回到 404
+```
+
+改完**重启服务器**生效（`off` 同理）。`set --file=<路径>` 可以写到别处（那时服务器要用 `ADMIN_SECRET_FILE` 指向同一个文件）。
+
+### 服务器上（推荐文件方式）
+
 **方式一：环境变量**（`/etc/stronghold/stronghold.env`）
 
 ```ini

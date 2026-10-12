@@ -43,24 +43,48 @@ export const ADMIN_BROADCAST_TEXT_MAX = 300;
 export const ADMIN_BODY_MAX_BYTES = 8 * 1024;
 
 /**
- * The configured secret: `ADMIN_SECRET`, else the contents of `ADMIN_SECRET_FILE` (systemd LoadCredential, a Docker
- * secret or a root-owned file — keeping the secret out of the process environment and out of `ps` output).
+ * The configured secret, in order: `ADMIN_SECRET`, else the contents of `ADMIN_SECRET_FILE` (systemd LoadCredential, a
+ * Docker secret or a root-owned file — keeping the secret out of the process environment and out of `ps` output), else the
+ * default file (`runtime/admin.secret` on this deployment).
+ *
+ * The default file exists so that a plain local run has somewhere to keep the secret: the start scripts ask for one on the
+ * first run (`tools/admin-secret.mjs ensure`, scripts/launch.mjs) and the installers write it here too. It is still an
+ * explicit setup step — no file, no console (docs/ADMIN.md §1).
+ *
  * @param {Record<string, string|undefined>} [env]
- * @returns {{ secret: string|null, source: 'env'|'file'|null, problem: string }}
+ * @param {{ defaultFile?: string }} [opts]
+ * @returns {{ secret: string|null, source: 'env'|'file'|'default'|null, problem: string }}
  */
-export function readAdminSecret(env = process.env) {
+export function readAdminSecret(env = process.env, { defaultFile = '' } = {}) {
   const inline = String(env.ADMIN_SECRET ?? '').trim();
   if (inline) {
     if (inline.length < ADMIN_MIN_SECRET_LEN) return { secret: null, source: null, problem: `ADMIN_SECRET 至少需要 ${ADMIN_MIN_SECRET_LEN} 个字符` };
     return { secret: inline, source: 'env', problem: '' };
   }
   const file = String(env.ADMIN_SECRET_FILE ?? '').trim();
-  if (!file) return { secret: null, source: null, problem: '未设置 ADMIN_SECRET（或 ADMIN_SECRET_FILE）' };
-  let text;
-  try { text = readFileSync(file, 'utf8').trim(); }
-  catch (error) { return { secret: null, source: null, problem: `ADMIN_SECRET_FILE 读取失败：${error.code || error.message}` }; }
-  if (text.length < ADMIN_MIN_SECRET_LEN) return { secret: null, source: null, problem: `ADMIN_SECRET_FILE 中的密钥至少需要 ${ADMIN_MIN_SECRET_LEN} 个字符` };
-  return { secret: text, source: 'file', problem: '' };
+  if (file) {
+    let text;
+    try { text = readFileSync(file, 'utf8').trim(); }
+    catch (error) { return { secret: null, source: null, problem: `ADMIN_SECRET_FILE 读取失败：${error.code || error.message}` }; }
+    if (text.length < ADMIN_MIN_SECRET_LEN) return { secret: null, source: null, problem: `ADMIN_SECRET_FILE 中的密钥至少需要 ${ADMIN_MIN_SECRET_LEN} 个字符` };
+    return { secret: text, source: 'file', problem: '' };
+  }
+  if (defaultFile) {
+    let text = '';
+    try { text = readFileSync(defaultFile, 'utf8').trim(); }
+    catch (error) {
+      // A missing default file is the ordinary "not configured yet" case, not an error to shout about.
+      if (error?.code !== 'ENOENT') return { secret: null, source: null, problem: `${defaultFile} 读取失败：${error.code || error.message}` };
+    }
+    if (text) {
+      if (text.length < ADMIN_MIN_SECRET_LEN) return { secret: null, source: null, problem: `${defaultFile} 中的密钥至少需要 ${ADMIN_MIN_SECRET_LEN} 个字符` };
+      return { secret: text, source: 'default', problem: '' };
+    }
+  }
+  return {
+    secret: null, source: null,
+    problem: `未设置 ADMIN_SECRET（或 ADMIN_SECRET_FILE${defaultFile ? `、${defaultFile}` : ''}）—— 运行 node tools/admin-secret.mjs ensure 即可设置`,
+  };
 }
 
 /** Constant-time string compare that never throws on a length mismatch. */

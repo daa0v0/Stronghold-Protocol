@@ -53,7 +53,8 @@ export function bindCandidates(host) {
 
 /**
  * The directories the static server reads (packsDir: the pack folders, server/packs.js).
- * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string, modsDir?: string }} opts
+ * @param {{ publicDir?: string, dataDir?: string, sharedDir?: string, packsDir?: string, modsDir?: string,
+ *   adminSecretFile?: string }} opts
  */
 export function serveDirs(opts) {
   return {
@@ -63,6 +64,9 @@ export function serveDirs(opts) {
     packsDir: opts.packsDir || path.join(ROOT, 'packs'),
     // 代码 mod (docs/PACKS.md §4): never served, never in the pack index — server/mods.js reads it at start.
     modsDir: opts.modsDir || path.join(ROOT, 'mods'),
+    // 运维后台密钥的默认文件 (docs/ADMIN.md §2): the third source server/admin.js reads, written by tools/admin-secret.mjs
+    // (scripts/launch.mjs runs it on a first start) and by the service installers. Under runtime/, which is gitignored.
+    adminSecretFile: opts.adminSecretFile || path.join(ROOT, 'runtime', 'admin.secret'),
   };
 }
 

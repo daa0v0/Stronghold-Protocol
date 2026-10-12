@@ -24,7 +24,7 @@
 | 防火墙 | 安装脚本自动加 `netsh advfirewall` 规则 | `ufw allow 3000/tcp` / `firewall-cmd` |
 | 反向代理 | 可选（Caddy for Windows / IIS / nginx） | `deploy/nginx-stronghold.conf`、Caddyfile 示例 |
 | 日志 | `logs\server.log`（计划任务模式）或控制台 | `journalctl -u stronghold -f` |
-| 后台密钥 | `runtime\admin.secret` + `service.env.cmd` 里的 `ADMIN_SECRET_FILE` | `/etc/stronghold/admin.secret` + `ADMIN_SECRET_FILE` |
+| 后台密钥 | `runtime\admin.secret` + `service.env.cmd` 里的 `ADMIN_SECRET_FILE`（首次启动会问你要不要设，见 [ADMIN.md](ADMIN.md) §2） | `/etc/stronghold/admin.secret` + `ADMIN_SECRET_FILE` |
 | 一键更新 | `scripts\install-service-windows.ps1 -Restart` | `sudo sh scripts/update-linux.sh` |
 | 开发/手动跑 | `npm start`（两边一样） | `npm start`（两边一样） |
 
