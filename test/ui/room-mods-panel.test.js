@@ -3,9 +3,30 @@
 // What the panel shows and what it sends: only the packs a room may drop (a fixed one is always on), every code mod the
 // server ENABLED (a room decides which of them its match runs), and a `room.setMods` payload that keeps the fixed packs in
 // because the server refuses a list that leaves one out.
-const { packRows, codeModRows, roomModsRequest } = await import('../../public/js/ui/roomMods.js');
+const { packRows, codeModRows, roomModsRequest, roomModsState } = await import('../../public/js/ui/roomMods.js');
 const { test } = await import('node:test');
 const assert = (await import('node:assert/strict')).default;
+
+test('roomModsState: every field the panel needs survives the store copy', () => {
+  const frame = {
+    t: 'room.mods', code: 'AXZL', mods: ['capacity-20', 'stronghold-skins'], fixed: ['capacity-20', 'stronghold-skins'],
+    choosable: [], codeMods: ['shared-health-bar'],
+    codeChoices: [{ id: 'shared-health-bar', name: '全队共享血条', description: '一条血条', version: '1.0.0' }],
+    tag: 'abc123',
+  };
+  const state = roomModsState(frame);
+  assert.deepEqual(state, {
+    code: 'AXZL', mods: ['capacity-20', 'stronghold-skins'], fixed: ['capacity-20', 'stronghold-skins'],
+    choosable: [], codeMods: ['shared-health-bar'],
+    codeChoices: [{ id: 'shared-health-bar', name: '全队共享血条', description: '一条血条', version: '1.0.0' }],
+    tag: 'abc123',
+  }, 'a mapper that dropped choosable/codeMods/codeChoices is what once left the room panel empty');
+  // a server that sends none of them (an older one) still yields a well-formed state
+  assert.deepEqual(roomModsState({ t: 'room.mods' }), {
+    code: null, mods: [], fixed: [], choosable: [], codeMods: [], codeChoices: [], tag: '',
+  });
+  assert.deepEqual(roomModsState(null).mods, [], 'and a missing frame is not a crash');
+});
 
 const ENTRIES = [
   { id: 'stronghold-skins', name: '干员皮肤' },

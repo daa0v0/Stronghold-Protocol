@@ -371,6 +371,8 @@ export function RoomScreen() {
   const roomModsFresh = roomModsState ? roomContentOk(roomModsState.tag, contentTagOf(roomModsState.mods)) : true;
   // Only the packs a room can actually turn off: a fixed one is always on, so listing it says nothing (docs/PACKS.md §4).
   const roomChoosable = roomModsState ? roomModsState.mods.filter((id) => !roomModsState.fixed.includes(id)) : [];
+  // The pack index (names for the panel's pack rows) read at the top level, like every other hook of this screen.
+  const packEntries = useStore((s) => s.packEntries) || [];
   const roomModsLine = roomModsState && roomChoosable.length
     ? html`<div class=${`room-mods${roomModsFresh ? '' : ' is-stale'}`} data-testid="room-mods">
         <span>${t('本局内容包')}</span><b>${roomChoosable.join(', ')}</b>
@@ -416,7 +418,7 @@ export function RoomScreen() {
     </header>
 
     ${coop ? html`<${CapacityPicker} room=${room} facts=${facts} busy=${busy} onPick=${setCapacity} />` : null}
-    ${coop ? html`<${RoomModsPicker} state=${roomModsState} entries=${useStore((s) => s.packEntries) || []}
+    ${coop ? html`<${RoomModsPicker} state=${roomModsState} entries=${packEntries}
       isHost=${facts.isHost} busy=${busy} onPick=${setRoomMods} />` : null}
     ${roomModsLine}
     <main class=${`seats${coop ? facts.seats.length > 10 ? ' seats--dense' : facts.seats.length > 4 ? ' seats--expanded' : '' : ' seats--solo'}${coop && facts.seats.length === 10 ? ' seats--ten' : ''}`}>

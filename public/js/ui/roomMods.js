@@ -43,6 +43,28 @@ export function modsForCreate(selected, choices) {
 }
 
 /**
+ * The store's copy of a `room.mods` frame (docs/PACKS.md §4). Every field the panel needs must survive here: a mapper that
+ * picked only some of them is what once left the room's mod panel with nothing to show.
+ * @param {any} msg the frame
+ * @returns {{ code: string|null, mods: string[], fixed: string[], choosable: string[],
+ *   codeMods: string[], codeChoices: { id: string, name?: string, englishName?: string, description?: string,
+ *   version?: string }[], tag: string }}
+ */
+export function roomModsState(msg) {
+  const msgObj = msg || {};
+  const list = (v) => (Array.isArray(v) ? v.slice() : []);
+  return {
+    code: msgObj.code || null,
+    mods: list(msgObj.mods),
+    fixed: list(msgObj.fixed),
+    choosable: list(msgObj.choosable),
+    codeMods: list(msgObj.codeMods),
+    codeChoices: list(msgObj.codeChoices).map((m) => ({ ...m })),
+    tag: msgObj.tag || '',
+  };
+}
+
+/**
  * Whether the packs this page applied are the ones a room runs: the room's own tag against the tag of `appliedIds`.
  * An empty `roomTag` (an older server, or a frame that has not arrived) is not a mismatch — it is "nothing to compare".
  * @param {string} roomTag @param {string} appliedTag

@@ -59,6 +59,7 @@ import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
 import { installSkinsSync } from './ui/skins.js';
 import { installAssetPacks, applyRoomMods } from './ui/assetPacks.js';
+import { roomModsState } from './ui/roomMods.js';
 import { installContentPacks, contentEntries } from './ui/contentPacks.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { MAX_SEATS } from '../../shared/constants.js';
@@ -259,9 +260,11 @@ function wireNet() {
   // room.mods (docs/PACKS.md §4): the content packs this match runs, right after room.state. The page applies the ones it
   // knows (ui/assetPacks.js) and keeps the room's own tag, so the room screen can say whether this page matches the match.
   net.on('room.mods', (msg) => {
-    const mods = Array.isArray(msg.mods) ? msg.mods.slice() : [];
-    store.set({ mods: { code: msg.code || null, mods, fixed: Array.isArray(msg.fixed) ? msg.fixed.slice() : [], tag: msg.tag || '' } });
-    applyRoomMods(mods);
+    // The whole frame goes through roomModsState: the room screen's own mod panel needs `choosable`, `codeMods` and
+    // `codeChoices` as much as the pack list and the tag (docs/MODS.md §4.6).
+    const state = roomModsState(msg);
+    store.set({ mods: state });
+    applyRoomMods(state.mods);
   });
   net.on('room.closed', (msg) => {
     backToLobby();
