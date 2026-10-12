@@ -1423,5 +1423,6 @@
   "开": "On",
   "本局附加内容": "Extras for this match",
   "应用": "Apply",
-  "代码 mod": "Code mods"
+  "代码 mod": "Code mods",
+  "本局代码 mod 的选项全队都能改；内容包由房主选择": "Any teammate can change a code mod's options; the content packs are the host's call"
 }

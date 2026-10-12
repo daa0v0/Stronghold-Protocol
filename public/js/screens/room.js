@@ -273,6 +273,9 @@ function RoomModsDialog({ open, state, entries, isHost, busy, onClose, onApply }
    * One declared option, rendered with the GAME's own settings controls (ui/settings.js): a boolean or a two-value enum is
    * the round switch, a number is the settings' range slider, and anything longer is its segmented row. A code mod's knob
    * therefore looks like part of the settings screen, not like a new widget (docs/MODS.md §4.6).
+   *
+   * A knob is a TEAM decision: anyone sitting in the room may set it (the server accepts options from a teammate and refuses
+   * only a change of the composition), while the host can always re-apply their own values — so the host's choice wins.
    */
   const optionControl = (modId, row) => {
     const micro = String(row.key).toUpperCase().slice(0, 18);
@@ -299,7 +302,7 @@ function RoomModsDialog({ open, state, entries, isHost, busy, onClose, onApply }
       <span class="set-row__label">${row.label}<${MicroLabel}>${micro}<//></span>
       <div class="set-seg" role="radiogroup" aria-label=${row.label}>
         ${values.map((v) => html`<button key=${String(v)} type="button" role="radio" aria-checked=${row.value === v ? 'true' : 'false'}
-          class=${row.value === v ? 'is-on' : ''} disabled=${!isHost || !!busy} onClick=${() => set(v)}>${String(v)}</button>`)}
+          class=${row.value === v ? 'is-on' : ''} disabled=${!!busy} onClick=${() => set(v)}>${String(v)}</button>`)}
       </div>
     </div>`, `mod-opt-${modId}-${row.key}`);
   };
@@ -314,14 +317,14 @@ function RoomModsDialog({ open, state, entries, isHost, busy, onClose, onApply }
   return html`<${Modal} open=${open} onClose=${onClose} title=${t('本局附加内容')} micro="ROOM MODS // PACKS & CODE MODS"
     width="7.4rem" class="room-moddlg" actions=${html`
       <${Button} variant="secondary" icon="close" data-testid="room-mods-close" onClick=${onClose}>${t('关闭')}<//>
-      ${isHost ? html`<${Button} variant="primary" icon="check" data-testid="room-mods-apply" disabled=${!!busy} onClick=${apply}>${t('应用')}<//>` : null}`}>
+      <${Button} variant="primary" icon="check" data-testid="room-mods-apply" disabled=${!!busy} onClick=${apply}>${t('应用')}<//>`}>
     <div class="set-list" data-testid="room-modpick">
       ${packRowList.length ? groupRow(t('本局内容包'), 'PACKS', packRowList, (id) => setPacks(toggle(chosenPacks, id))) : null}
       ${codeRowList.length ? groupRow(t('本局代码 mod'), 'CODE MODS', codeRowList, (id) => setCode(toggle(chosenCode, id))) : null}
       ${(state.codeOptions || []).filter((entry) => chosenCode.includes(entry.id) && (entry.options || []).length).map((entry) => html`<div key=${entry.id}>
         ${(entry.options || []).map((o) => optionControl(entry.id, optionRows(entry, changed[entry.id] || {}).find((r) => r.key === o.key)))}
       </div>`)}
-      ${isHost ? null : html`<p class="set-hint">${t('由房主选择')}</p>`}
+      <p class="set-hint">${t('本局代码 mod 的选项全队都能改；内容包由房主选择')}</p>
     </div>
   <//>`;
 }

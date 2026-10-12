@@ -88,7 +88,7 @@ test('a room reports its packs and its own content tag, and cannot drop a pack t
       const unknown = await host.request({ t: 'room.setMods', mods: ['nope'] });
       assert.equal(unknown.code, 'MODS');
 
-      // 4. only the host may change it, and the change un-readies the others
+      // 4. only the host may change what a match RUNS, and the change un-readies the others
       const guest = await connect(srv, 'Guest');
       try {
         const joinReply = await guest.request({ t: 'room.join', code: state.code });
@@ -98,8 +98,12 @@ test('a room reports its packs and its own content tag, and cannot drop a pack t
         const readyReply = await guest.request({ t: 'room.ready', ready: true });
         assert.equal(readyReply.t, 'ok', `ready: ${JSON.stringify(readyReply)}`);
         await guest.waitFor('room.state', (s) => s.seats.some((x) => x && x.playerId === guest.id && x.ready));
-        const notHost = await guest.request({ t: 'room.setMods', mods: ['art', 'bal'] });
-        assert.equal(notHost.code, 'NOT_HOST');
+        // 4. WHO decides what (docs/MODS.md §4.6): a teammate may set a code mod's OPTIONS — which is what this request is
+        // once it leaves the composition alone — but only the host picks what the match runs
+        const guestOptions = await guest.request({ t: 'room.setMods', mods: ['art', 'bal'] });
+        assert.equal(guestOptions.t, 'ok', `a teammate may set options: ${JSON.stringify(guestOptions)}`);
+        const notHost = await guest.request({ t: 'room.setMods', mods: ['bal'] });
+        assert.equal(notHost.code, 'NOT_HOST', 'the composition is the host alone');
         // the host drops one live pack: everyone is told, and the guest has to look again
         await host.request({ t: 'room.setMods', mods: ['bal'] });
         const narrowed = await host.waitFor('room.mods', (m) => m.mods.length === 1);

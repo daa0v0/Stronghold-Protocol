@@ -85,16 +85,30 @@ test('a room may drop every code mod, and a mod the owner did not enable cannot 
   assert.deepEqual(room.codeMods, [], 'and the refusal changed nothing');
 });
 
-test('only the host may change it, and not once the match started', () => {
+test('who may change it: any teammate the knobs, only the host the composition', () => {
   const { lobby, registry } = makeLobby();
   const host = registry.create('房主');
   const guest = registry.create('队友');
   lobby.create(host, { mode: 'coop', difficulty: 'HARD' });
   assert.deepEqual(lobby.join(guest, { code: lobby.roomOf(host).code }), { ok: true });
-  assert.equal(lobby.setMods(guest, { codeMods: [] }).error, ERR.NOT_HOST);
   const room = lobby.roomOf(host);
-  room.match = {};   // as if the match had started
-  assert.equal(lobby.setMods(host, { codeMods: [] }).error, ERR.ROOM_STARTED);
+  // a teammate may set a code mod's options — the shared bar's sum/max is a team decision (docs/MODS.md §4.6)…
+  assert.deepEqual(lobby.setMods(guest, { codeOptions: { 'revive-teammate': { cost: 20 } } }), { ok: true },
+    'the composition is left alone, so a teammate may set the knobs');
+  assert.deepEqual(room.codeModOptions, { 'revive-teammate': { cost: 20 } });
+  // …but not what the match runs
+  assert.equal(lobby.setMods(guest, { codeMods: ['dup-strategies'] }).error, ERR.NOT_HOST);
+  assert.deepEqual(room.codeMods, ['dup-strategies', 'revive-teammate'], 'the refusal changed nothing');
+  assert.deepEqual(room.codeModOptions, { 'revive-teammate': { cost: 20 } });
+  // the host can always take the knobs back, which is what "the host's choice wins" means
+  assert.deepEqual(lobby.setMods(host, { codeOptions: { 'revive-teammate': { cost: 5 } } }), { ok: true });
+  assert.deepEqual(room.codeModOptions, { 'revive-teammate': { cost: 5 } });
+  // someone who is not in the room at all gets nowhere
+  const stranger = registry.create('路人');
+  assert.equal(lobby.setMods(stranger, { codeOptions: {} }).error, ERR.NOT_IN_ROOM);
+  // nor may anyone change it once the match started
+  room.match = {};
+  assert.equal(lobby.setMods(host, { codeOptions: {} }).error, ERR.ROOM_STARTED);
 });
 
 test('a room sets a mod option, the frame offers the declaration, and the match receives the values', () => {

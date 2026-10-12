@@ -822,20 +822,25 @@ export class Lobby {
   setMods(session, { mods, codeMods, codeOptions }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
-    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
     const check = this.checkMods(mods, codeMods, codeOptions);
     if (!check.ok) return check;
+    const isHost = room.hostId === session.playerId;
     const packsChanged = check.ids.join('|') !== room.mods.join('|');
     const codeChanged = check.codeIds.join('|') !== (room.codeMods || []).join('|');
     const optionsChanged = JSON.stringify(check.codeOptions) !== JSON.stringify(room.codeModOptions || {});
+    // WHO decides what (docs/MODS.md §4.6): the host composes the room — which packs and which code mods a match runs — but
+    // a code mod's declared OPTIONS are a team decision, so anyone sitting in the room may set those. A non-host request that
+    // touches the composition is refused, and the host can always re-apply their own values, so the host's choice wins.
+    if (!isHost && (packsChanged || codeChanged)) return fail(ERR.NOT_HOST);
     if (packsChanged || codeChanged || optionsChanged) {
       this.dropReplay(room, session.playerId);
       room.mods = check.ids;
       room.codeMods = check.codeIds;
       room.codeModOptions = check.codeOptions;
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
-      this.log.info(`[lobby] ${room.code} mods → ${this.modsLogLine(room)}`);
+      const who = isHost ? '' : ` (options by ${String(session.name || '').slice(0, 24) || 'a teammate'})`;
+      this.log.info(`[lobby] ${room.code} mods → ${this.modsLogLine(room)}${who}`);
       this.broadcastState(room);
     }
     return OK;
