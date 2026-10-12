@@ -169,7 +169,7 @@ try {
         $AdminSecret = (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
       }
     }
-    if ($AdminSecret.Length -lt 16) { throw "ADMIN_SECRET 至少需要 16 个字符（当前 $($AdminSecret.Length) 个）。" }
+    if ($AdminSecret.Length -lt 6) { throw "ADMIN_SECRET 至少需要 6 个字符（当前 $($AdminSecret.Length) 个）；12 个以上更适合公网。" }
     Set-Content -Path $AdminSecretFile -Value $AdminSecret -Encoding Ascii -NoNewline -ErrorAction Stop
     # 密钥放文件里（不放 env 文件），服务端启动时自己读，与 Linux 的 ADMIN_SECRET_FILE 用法一致
     Add-Content -Path $EnvFile -Value "set `"ADMIN_SECRET_FILE=$AdminSecretFile`"" -Encoding Oem

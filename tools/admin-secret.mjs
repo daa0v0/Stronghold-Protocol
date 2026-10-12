@@ -1,7 +1,7 @@
 // tools/admin-secret.mjs — 运维后台 (/admin) 的密钥，第一次运行/部署时设置 (docs/ADMIN.md §2).
 //
 //   node tools/admin-secret.mjs ensure [--secret=… | --generate] [--quiet]   首次运行：没有密钥就设一个（启动脚本调用它）
-//   node tools/admin-secret.mjs set    [--secret=… | --generate]             设置 / 替换
+//   node tools/admin-secret.mjs set    [--secret=… | --generate]             设置 / 替换（至少 6 个字符，短于 12 会提醒）
 //   node tools/admin-secret.mjs show   [--reveal]                            现在从哪来、是否生效（默认不打印密钥本身）
 //   node tools/admin-secret.mjs rotate [--generate]                          换一个（已登录的会话立即失效）
 //   node tools/admin-secret.mjs off                                          删除文件，后台回到 404
@@ -19,7 +19,7 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
-import { ADMIN_MIN_SECRET_LEN, readAdminSecret } from '../server/admin.js';
+import { ADMIN_MIN_SECRET_LEN, ADMIN_RECOMMENDED_SECRET_LEN, readAdminSecret, weakSecretWarning } from '../server/admin.js';
 
 const ROOT = resolve(join(fileURLToPath(import.meta.url), '..', '..'));
 /** Where the secret is kept. `--file=` (or SP_ADMIN_SECRET_FILE) points it elsewhere — tests, or a second deployment. */
@@ -56,7 +56,7 @@ async function ask() {
     console.log('');
     console.log('首次运行：请设置运维后台（/admin）的密钥。');
     console.log(`  · 直接回车 = 自动生成 ${'64'} 位随机密钥（推荐，稍后显示一次，请存到密码管理器）`);
-    console.log(`  · 或粘贴你自己的密钥（至少 ${ADMIN_MIN_SECRET_LEN} 个字符）`);
+    console.log(`  · 或输入你自己的密码（至少 ${ADMIN_MIN_SECRET_LEN} 个字符；${ADMIN_RECOMMENDED_SECRET_LEN} 个以上更适合公网）`);
     for (let attempt = 1; attempt <= 3; attempt++) {
       const answer = (await rl.question('密钥：')).trim();
       if (!answer) return { secret: generate(), generated: true };
@@ -98,6 +98,8 @@ async function main() {
     console.log(`文件：${SECRET_FILE}（${existsSync(SECRET_FILE) ? '存在' : '不存在'}）`);
     if (s.secret) {
       console.log(`状态：已启用，来源 ${SOURCE_NAME[s.source] || s.source}，密钥长度 ${s.secret.length}`);
+      const weak = weakSecretWarning(s.secret);
+      if (weak) console.log(`提示：${weak}`);
       if (args.reveal) console.log(`密钥：${s.secret}`);
     } else console.log(`状态：关闭 —— ${s.problem}`);
     return 0;
@@ -136,6 +138,8 @@ async function main() {
   write(chosen.secret);
   console.log(`✔ 已写入 ${SECRET_FILE}`);
   if (chosen.generated) console.log(`  生成的密钥（只显示这一次，请存好）：${chosen.secret}`);
+  const weak = weakSecretWarning(chosen.secret);
+  if (weak) console.log(`  ⚠ ${weak}`);
   if (args.file && resolve(args.file) !== join(ROOT, 'runtime', 'admin.secret')) {
     console.log(`  注意：服务器只在这个文件是 runtime/admin.secret 时自动读取；否则要设 ADMIN_SECRET_FILE=${SECRET_FILE} 再启动。`);
   }

@@ -222,7 +222,7 @@ game.example.com {
 | `PORT` | `3000` | 监听端口 |
 | `HOST` | `::` | 绑定地址。**放在反代后面就设 `127.0.0.1`**（更安全） |
 | `TRUST_PROXY` | `auto` | 取真实客户端 IP：`auto` 只信 loopback/内网的转发头；`1` 永远信；`0` 从不信 |
-| `ADMIN_SECRET` | 空 | 运维后台密钥（≥16 字符）。空 = 后台关闭，见 [ADMIN.md](ADMIN.md) |
+| `ADMIN_SECRET` | 空 | 运维后台密钥（≥6 字符，少于 12 会提醒；公网建议 12+）。空 = 后台关闭，见 [ADMIN.md](ADMIN.md) |
 | `ADMIN_SECRET_FILE` | 空 | 从文件读密钥（推荐，进程环境里看不到） |
 | `SP_COMBAT` | `client` | `client` = 玩家浏览器算战斗（默认，服务器几乎不耗 CPU）；`server` = 服务器算并推流（20 人房很吃 CPU） |
 | `SP_VERIFY` | `off` | 复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部，最耗 CPU） |

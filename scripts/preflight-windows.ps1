@@ -128,7 +128,9 @@ if (-not $secretValue -and (Test-Path $SecretFile)) { $secretSource = $SecretFil
 if (-not $secretValue) {
   Warn '没读到后台密钥 → 运维后台整体关闭（这是安全的默认）。装服务时会自动生成，见 scripts\install-service-windows.ps1'
 } else {
-  if ($secretValue.Length -ge 16) { Ok "密钥已配置（$($secretValue.Length) 字符，来源 $secretSource）" } else { Bad "密钥只有 $($secretValue.Length) 字符，至少需要 16" }
+  if ($secretValue.Length -ge 12) { Ok "密钥已配置（$($secretValue.Length) 字符，来源 $secretSource）" }
+  elseif ($secretValue.Length -ge 6) { Ok "密钥已配置（$($secretValue.Length) 字符，来源 $secretSource）—— 本机/局域网够用；公网建议 12 个以上" }
+  else { Bad "密钥只有 $($secretValue.Length) 字符，至少需要 6" }
 }
 
 # ---- 7. 计划任务 / Windows 服务 ----------------------------------------------------------------

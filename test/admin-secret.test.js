@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { readAdminSecret, ADMIN_MIN_SECRET_LEN } from '../server/admin.js';
+import { readAdminSecret, weakSecretWarning, ADMIN_MIN_SECRET_LEN, ADMIN_RECOMMENDED_SECRET_LEN } from '../server/admin.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOOL = path.join(ROOT, 'tools', 'admin-secret.mjs');
@@ -95,8 +95,21 @@ test('set/rotate refuse a weak secret and rotate replaces a good one', () => {
   try {
     const weak = run(['set', '--secret=short', '--file=' + file]);
     assert.equal(weak.status, 1);
-    assert.match(weak.out, /至少需要 16 个字符/);
+    assert.match(weak.out, new RegExp(`至少需要 ${ADMIN_MIN_SECRET_LEN} 个字符`));
     assert.equal(fs.existsSync(file), false, 'nothing is written when the input is refused');
+
+    // A password the owner will actually remember is accepted, with one honest warning instead of a refusal.
+    const six = run(['set', '--secret=abc123', '--file=' + file]);
+    assert.equal(six.status, 0, six.out);
+    assert.match(six.out, /只有 6 个字符/, 'a short password is accepted but called out');
+    assert.match(six.out, /公网/);
+    assert.equal(fs.readFileSync(file, 'utf8').trim(), 'abc123');
+    assert.match(run(['show', '--file=' + file]).out, /提示：.*只有 6 个字符/, 'and show repeats it');
+    assert.equal(weakSecretWarning('abc123'), weakSecretWarning('abc123'));
+    assert.ok(weakSecretWarning('abc123'), 'six characters is called out');
+    assert.equal(weakSecretWarning('a'.repeat(ADMIN_RECOMMENDED_SECRET_LEN)), null, 'the recommended length is not');
+    assert.equal(weakSecretWarning(''), null, 'and an empty secret is a different problem entirely');
+    assert.doesNotMatch(run(['set', '--secret=' + 'a'.repeat(12), '--file=' + file]).out, /只有/, 'twelve characters is quiet');
 
     const good = run(['set', '--secret=' + 'a'.repeat(20), '--file=' + file]);
     assert.equal(good.status, 0, good.out);

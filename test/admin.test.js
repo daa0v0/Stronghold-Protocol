@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../server/index.js';
+import { ADMIN_MIN_SECRET_LEN, ADMIN_RECOMMENDED_SECRET_LEN } from '../server/admin.js';
 import { TestClient } from './helpers/wsClient.js';
 
 const SECRET = 'unit-test-admin-secret-value';
@@ -59,8 +60,26 @@ test('a short secret is refused, so the console stays off', async () => {
   const srv = await makeServer({ adminSecret: 'short' });
   try {
     assert.equal(srv.admin.status().enabled, false);
-    assert.match(srv.admin.status().problem, /16/);
+    assert.match(srv.admin.status().problem, new RegExp(String(ADMIN_MIN_SECRET_LEN)));
     assert.equal((await call(srv.url, '/api/admin/overview')).status, 404);
+  } finally { await srv.close(); }
+});
+
+test('a password-length secret is accepted: warned about once, never refused', async () => {
+  // The user's point: the console is protected by a password, so the minimum has to be one. Six characters is the floor
+  // (well under what the per-address login throttle could be walked through), twelve is where the warning stops.
+  const logs = [];
+  const capture = { info: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push(a.join(' ')), error: () => {} };
+  const password = 'abc123';
+  assert.ok(password.length >= ADMIN_MIN_SECRET_LEN && password.length < ADMIN_RECOMMENDED_SECRET_LEN);
+  const srv = await makeServer({ adminSecret: password, extra: { log: capture } });
+  try {
+    assert.equal(srv.admin.status().enabled, true, 'a 6-character password opens the console');
+    const login = await call(srv.url, '/api/admin/login', { method: 'POST', body: { secret: password } });
+    assert.equal(login.status, 200, 'and it logs in');
+    const warn = String(logs.find((l) => l.includes('只有')));
+    assert.match(warn, /只有 6 个字符/);
+    assert.match(warn, /公网/, 'and says where it is not enough');
   } finally { await srv.close(); }
 });
 

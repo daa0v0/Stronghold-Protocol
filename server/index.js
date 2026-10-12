@@ -41,7 +41,7 @@ import { createAssetCacheHandler } from './http/assetCache.js';
 import { createBandwidthEmergencyController, bandwidthEmergencyOptions } from './bandwidthEmergency.js';
 import { answerClientError } from './http/common.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
-import { createAdminService, createLogRing, readAdminSecret, withLogRing } from './admin.js';
+import { createAdminService, createLogRing, readAdminSecret, weakSecretWarning, withLogRing } from './admin.js';
 import { createAdminHandler } from './http/admin.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
@@ -93,7 +93,12 @@ export async function startServer(opts = {}) {
   // without this line the only symptom is a 404 with no explanation anywhere. The message names the next step.
   const sourceName = { env: 'ADMIN_SECRET', file: 'ADMIN_SECRET_FILE', default: 'runtime/admin.secret' }[adminSecret.source] || '';
   if (!adminSecret.secret) log.info(`[admin] 后台关闭：${adminSecret.problem}（docs/ADMIN.md §2 说明如何开启；配好后重启）`);
-  else log.info(`[admin] 后台已启用（密钥来源：${sourceName}）`);
+  else {
+    log.info(`[admin] 后台已启用（密钥来源：${sourceName}）`);
+    // Accepted, but worth saying once: this is the line between "my own server" and "the internet can reach it".
+    const weak = weakSecretWarning(adminSecret.secret);
+    if (weak) log.warn?.(`[admin] ${weak}`);
+  }
 
   // The owner's private settings (runtime/server-settings.json, /admin) come first: the pack registry reads their
   // content-pack policy on every scan (docs/PACKS.md §4).

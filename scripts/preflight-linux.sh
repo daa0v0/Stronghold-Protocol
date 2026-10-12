@@ -146,7 +146,9 @@ if [ -z "$SECRET_VALUE" ]; then
   warn "没读到 ADMIN_SECRET / ADMIN_SECRET_FILE / $SECRET_FILE → 运维后台整体关闭（这是安全的默认）"
 else
   LEN=$(printf '%s' "$SECRET_VALUE" | tr -d '\n' | wc -c | tr -d ' ')
-  if [ "$LEN" -ge 16 ]; then ok "密钥已配置（$LEN 字符）"; else bad "密钥只有 $LEN 字符，至少需要 16"; fi
+  if [ "$LEN" -ge 12 ]; then ok "密钥已配置（$LEN 字符）"
+  elif [ "$LEN" -ge 6 ]; then ok "密钥已配置（$LEN 字符）—— 本机/局域网够用；公网建议 12 个以上"
+  else bad "密钥只有 $LEN 字符，至少需要 6"; fi
 fi
 if [ -f "$SECRET_FILE" ]; then
   MODE=$(stat -c '%a' "$SECRET_FILE" 2>/dev/null || echo '?')

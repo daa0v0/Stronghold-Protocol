@@ -132,7 +132,7 @@ npm start          # 启动服务器：http://localhost:3000
 | `SP_COMBAT` | `client` | `client`：各玩家浏览器模拟自己的战斗（服务器负载极低）；`server`：由服务器模拟并推流 |
 | `SP_VERIFY` | `off` | 服务器复算客户端上报的战斗结果：`off` / `sample`（约 1/8 抽查）/ `all`（全部复算，更耗 CPU） |
 | `TRUST_PROXY` | `auto` | 是否信任 `X-Forwarded-For` 等转发头：`auto` 只信任来自本机 / 内网的代理；`1` 总是；`0` 从不 |
-| `ADMIN_SECRET` | 空 | 运维后台 `/admin` 的密钥（≥16 字符）。留空则看下一个变量与默认文件（没有默认口令）；见 [docs/ADMIN.md](docs/ADMIN.md) |
+| `ADMIN_SECRET` | 空 | 运维后台 `/admin` 的密钥 / 密码（≥6 字符，少于 12 会提醒你；公网建议 12+）。留空则看下一个变量与默认文件（没有默认口令）；见 [docs/ADMIN.md](docs/ADMIN.md) |
 | `ADMIN_SECRET_FILE` | 空 | 从文件读取后台密钥（推荐：进程环境里看不到密钥）。两者都没有时服务器还读 `runtime/admin.secret` —— 本地启动脚本**首次运行会问你要不要设**（[docs/ADMIN.md](docs/ADMIN.md) §2） |
 | `DEBUG` | 空 | 设为任意值输出详细日志 |
 | `SP_NO_BROWSER` | 空 | 设为 `1` 时启动脚本不自动打开浏览器 |

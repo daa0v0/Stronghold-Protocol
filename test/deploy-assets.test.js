@@ -190,7 +190,7 @@ test('the env example and the admin doc agree on how the console is switched on'
   for (const key of ['ADMIN_SECRET', 'ADMIN_SECRET_FILE', 'timingSafeEqual', '/api/admin/overview', '/api/admin/maintenance']) {
     assert.ok(admin.includes(key), `docs/ADMIN.md must document ${key}`);
   }
-  assert.match(admin, /至少 16/, 'docs/ADMIN.md must state the minimum secret length');
+  assert.match(admin, /至少 6/, 'docs/ADMIN.md must state the minimum secret length');
 });
 
 test('every deploy/ file is referenced by a deployment guide', () => {

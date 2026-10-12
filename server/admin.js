@@ -1,9 +1,10 @@
 // server/admin.js — 运维后台 (docs/ADMIN.md): a read-mostly HTTP console over a running server.
 //
 // Design notes worth keeping:
-//   * The panel is DISABLED unless ADMIN_SECRET (or ADMIN_SECRET_FILE) is set to at least ADMIN_MIN_SECRET_LEN
-//     characters. There is no default password: a forgotten environment variable must fail closed, never open a public
-//     console with a guessable secret (the fork this feature came from shipped `stronghold-admin-2026` as a fallback).
+//   * The panel is DISABLED unless ADMIN_SECRET (or ADMIN_SECRET_FILE, or runtime/admin.secret) is set to at least
+//     ADMIN_MIN_SECRET_LEN characters. There is no default password: a forgotten environment variable must fail closed,
+//     never open a public console with a guessable secret (the fork this feature came from shipped `stronghold-admin-2026`
+//     as a fallback). A short-but-accepted secret is reported once (weakSecretWarning) rather than refused.
 //   * Authenticating with `Authorization: Bearer <secret>` compares in constant time. The browser logs in once at
 //     POST /api/admin/login and then carries a per-process random cookie token, so the secret itself never lands in a
 //     cookie, a log line or the browser history.
@@ -31,10 +32,26 @@ export const ADMIN_API_PREFIX = '/api/admin';
 export const ADMIN_UI_PATH = '/admin';
 export const ADMIN_COOKIE = 'sp_admin';
 
-/** A secret shorter than this is refused; none of the usual guesses reaches it. */
-export const ADMIN_MIN_SECRET_LEN = 16;
+/**
+ * The hard minimum: a password the owner will actually remember. Short enough to be usable, long enough that the login
+ * throttle (ADMIN_LOGIN_MAX_FAILURES per ADMIN_LOGIN_WINDOW_MS, per address) cannot be walked through in a sitting.
+ */
+export const ADMIN_MIN_SECRET_LEN = 6;
+/**
+ * Below this, the console says so — once, without refusing it. A 6-character password is a reasonable private-server
+ * password; it is not what you want on a console reachable from the internet, where guessing can be spread over many
+ * addresses and the per-address throttle no longer bounds the attempts.
+ */
+export const ADMIN_RECOMMENDED_SECRET_LEN = 12;
 export const ADMIN_LOG_MAX = 400;
 export const ADMIN_LOG_TEXT_MAX = 500;
+
+/** The one-line warning for a weak-but-accepted secret, or null. @param {string} secret */
+export function weakSecretWarning(secret) {
+  const len = String(secret ?? '').length;
+  if (!len || len >= ADMIN_RECOMMENDED_SECRET_LEN) return null;
+  return `密钥只有 ${len} 个字符：本机/局域网够用，对公网开放建议 ${ADMIN_RECOMMENDED_SECRET_LEN} 个以上（登录限流按来源地址计数，多地址并行尝试不受它限制）`;
+}
 
 /** Login throttling, per client address (the panel is never reachable from an untrusted network without the secret). */
 export const ADMIN_LOGIN_MAX_FAILURES = 8;
