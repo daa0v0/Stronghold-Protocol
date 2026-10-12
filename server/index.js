@@ -83,6 +83,11 @@ export async function startServer(opts = {}) {
   const adminSecret = readAdminSecret(opts.adminSecret ? { ...process.env, ADMIN_SECRET: String(opts.adminSecret), ADMIN_SECRET_FILE: '' } : process.env);
   const logRing = createLogRing();
   const log = adminSecret.secret ? withLogRing(baseLog, logRing) : baseLog;
+  // Say WHY it is off, once, in the console. A missing secret means /admin and /api/admin/* answer 404 exactly like any
+  // other unknown path (docs/ADMIN.md §1 — no default password, and the 404 must not announce that a console exists), so
+  // without this line the only symptom is a 404 with no explanation anywhere. `reason` is the operator's next step.
+  if (!adminSecret.secret) log.info(`[admin] 后台关闭：${adminSecret.problem}（docs/ADMIN.md §2 说明如何开启；配好后重启）`);
+  else log.info(`[admin] 后台已启用（密钥来源：${adminSecret.source === 'file' ? 'ADMIN_SECRET_FILE' : 'ADMIN_SECRET'}）`);
   const { publicDir, dataDir, sharedDir, packsDir, modsDir } = serveDirs(opts);
 
   // The owner's private settings (runtime/server-settings.json, /admin) come first: the pack registry reads their

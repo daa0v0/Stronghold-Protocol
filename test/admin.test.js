@@ -59,6 +59,34 @@ test('a short secret is refused, so the console stays off', async () => {
   } finally { await srv.close(); }
 });
 
+test('the console logs WHY it is off, so a 404 is never the only symptom', async () => {
+  // The 404 is deliberate and must look like any other unknown path (docs/ADMIN.md §1), which leaves the console as the
+  // only place that can explain it. Reported by a user who saw "404 Not found" and had nothing to go on.
+  const logs = [];
+  const capture = { info: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')) };
+  const line = () => String(logs.find((l) => l.includes('[admin]')));
+  const saved = { s: process.env.ADMIN_SECRET, f: process.env.ADMIN_SECRET_FILE };
+  delete process.env.ADMIN_SECRET;
+  delete process.env.ADMIN_SECRET_FILE;
+  try {
+    const off = await makeServer({ adminSecret: undefined, extra: { log: capture } });
+    await off.close();
+    assert.match(line(), /后台关闭/, 'the reason is stated in the console');
+    assert.match(line(), /ADMIN_SECRET/, 'and names the variable that is missing');
+    assert.match(line(), /ADMIN\.md/, 'and where to read how to turn it on');
+
+    logs.length = 0;
+    process.env.ADMIN_SECRET = 'x'.repeat(32);
+    const on = await makeServer({ adminSecret: undefined, extra: { log: capture } });
+    await on.close();
+    assert.match(line(), /后台已启用/, 'and an enabled console says so too');
+    assert.match(line(), /ADMIN_SECRET/, 'naming where the secret came from');
+  } finally {
+    if (saved.s === undefined) delete process.env.ADMIN_SECRET; else process.env.ADMIN_SECRET = saved.s;
+    if (saved.f === undefined) delete process.env.ADMIN_SECRET_FILE; else process.env.ADMIN_SECRET_FILE = saved.f;
+  }
+});
+
 test('the secret can come from ADMIN_SECRET_FILE (systemd credentials / docker secrets)', async () => {
   const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
   const os = await import('node:os');

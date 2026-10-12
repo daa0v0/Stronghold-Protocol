@@ -5,6 +5,7 @@
 ## 1. 设计取舍（先看这三条，能省你很多疑问）
 
 1. **没有默认口令。** 没配 `ADMIN_SECRET`（或 `ADMIN_SECRET_FILE`）时，`/admin` 与 `/api/admin/*` 一律返回 **404**，和任何不存在的路径一样。忘了配 = 没有后台，而不是"用弱口令的后台"。
+   **打开 `/admin` 是 404 却不知道为什么？看启动日志**：后台关闭时服务器会打印一行 `[admin] 后台关闭：<具体原因>`（没设变量 / 密钥不足 16 字符 / 密钥文件读不到，三种各有各的文案）并指向本节；启用时打印 `[admin] 后台已启用（密钥来源：ADMIN_SECRET_FILE）`。404 刻意不暴露后台是否存在，所以日志是唯一的提示。
 2. **设置是只读的。** `server/serverSettings.js` 开头写明「Private per-server settings … **no HTTP administration endpoint**」——这是本项目有意为之（AI 上限、预缓存准入、素材限速都走 CLI）。后台**显示**这些值，改还是用 `node tools/server-settings.mjs`。
 3. **维护模式复用服务器自己的保护机制**，不是新开关：它调用的是带宽保护那条路径（`bandwidthEmergency.trip`），所以客户端显示的、行为上都和以前一致。
 
