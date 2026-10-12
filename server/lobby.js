@@ -231,6 +231,12 @@ export class Room {
      * @type {string[]}
      */
     this.mods = [];
+    /**
+     * The code mods THIS room's matches run (docs/MODS.md §4.6). A code mod is loaded server-wide; this is the subset the host
+     * picked, in the server's own order (every enabled one by default).
+     * @type {string[]}
+     */
+    this.codeMods = [];
     /** @type {any} summary passed to onEnd by the last match */
     this.lastSummary = null;
     /**
@@ -297,7 +303,7 @@ export class Lobby {
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, packs = null }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, packs = null, codeMods = [] }) {
     this.registry = registry;
     this.log = log;
     this.MatchClass = MatchClass;
@@ -305,6 +311,13 @@ export class Lobby {
     this.now = now;
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
     this.opts = { ...LOBBY_DEFAULTS, ...options };
+    /**
+     * The code mods this server ENABLED (the owner's switch in runtime/server-settings.json), as
+     * `{ id, name, englishName, description, version }`. A code mod is loaded once, server-wide; what a room chooses is which
+     * of these its matches run (docs/MODS.md §4.6).
+     * @type {{ id: string, name?: string, englishName?: string, description?: string, version?: string }[]}
+     */
+    this.codeMods = Array.isArray(codeMods) ? codeMods.slice() : [];
     /**
      * The content-pack registry (server/packs.js), or null in a bare test lobby: it answers which packs this server runs
      * and computes a room's own content tag (docs/PACKS.md §4).
@@ -533,13 +546,18 @@ export class Lobby {
   fixedMods() { return this.enabledMods().filter((p) => PACK_TYPES[p.type]?.live === false).map((p) => p.id); }
 
   /**
-   * Check a room's requested selection. `undefined`/`null` (the message left `mods` out) means "everything enabled".
-   * @param {unknown} mods
-   * @returns {{ ok: true, ids: string[] } | { error: string, detail?: string }}
+   * Check a room's requested selection. `undefined`/`null` (the message left the field out) means "everything enabled", for
+   * the content packs and for the code mods alike.
+   * @param {unknown} mods the content packs
+   * @param {unknown} [codeMods] the code mods (docs/MODS.md §4.6; only the enabled ones a room may name)
+   * @returns {{ ok: true, ids: string[], codeIds: string[] } | { error: string, detail?: string }}
    */
-  checkMods(mods) {
+  checkMods(mods, codeMods) {
     const ids = [...new Set(this.enabledMods().map((p) => p.id))];
-    if (mods === undefined || mods === null) return { ok: true, ids };
+    const enabledCode = this.codeMods.map((m) => m.id);
+    const codeIds = this.checkCodeMods(codeMods, enabledCode);
+    if (!codeIds.ok) return codeIds;
+    if (mods === undefined || mods === null) return { ok: true, ids, codeIds: codeIds.ids };
     if (!Array.isArray(mods)) return fail(ERR.BAD_MSG, 'mods must be a list of pack ids');
     const known = new Set(ids);
     for (const id of mods) if (!known.has(id)) return fail(ERR.MODS, `${String(id).slice(0, 64)} is not a content pack this server runs`);
@@ -547,7 +565,22 @@ export class Lobby {
       if (!mods.includes(id)) return fail(ERR.MODS, `${id} cannot be turned off for one room: its tables were fixed when the server started`);
     }
     // Keep the canonical order (the registry's), not the order the client listed them in.
-    return { ok: true, ids: ids.filter((id) => mods.includes(id)) };
+    return { ok: true, ids: ids.filter((id) => mods.includes(id)), codeIds: codeIds.ids };
+  }
+
+  /**
+   * The code mods a room asked for, in the server's own order. Only an ENABLED mod may be named (the owner's switch is what
+   * makes a mod load at all), and leaving the field out means "every enabled one".
+   * @param {unknown} codeMods
+   * @param {string[]} enabledCode
+   * @returns {{ ok: true, ids: string[] } | { error: string, detail?: string }}
+   */
+  checkCodeMods(codeMods, enabledCode) {
+    if (codeMods === undefined || codeMods === null) return { ok: true, ids: enabledCode.slice() };
+    if (!Array.isArray(codeMods)) return fail(ERR.BAD_MSG, 'codeMods must be a list of mod ids');
+    const known = new Set(enabledCode);
+    for (const id of codeMods) if (!known.has(id)) return fail(ERR.MODS, `${String(id).slice(0, 64)} is not a code mod this server enabled`);
+    return { ok: true, ids: enabledCode.filter((id) => codeMods.includes(id)) };
   }
 
   /**
@@ -559,16 +592,34 @@ export class Lobby {
     const fixed = this.fixedMods();
     // `choosable`: what a room can actually turn off. A fixed pack (a type whose `live` is false had its tables set when the
     // process started) is reported but never offered as a choice, so a client lists only real choices (docs/PACKS.md §4).
+    // `codeChoices` is every code mod the server ENABLED (a room may tick any of them) and `codeMods` is what this room runs.
     return {
       t: 'room.mods', code: room.code, mods: room.mods.slice(), fixed,
-      choosable: room.mods.filter((id) => !fixed.includes(id)), tag,
+      choosable: room.mods.filter((id) => !fixed.includes(id)),
+      codeMods: (room.codeMods || []).slice(),
+      codeChoices: this.codeMods.map((m) => ({
+        id: m.id, name: m.name || m.id, englishName: m.englishName || '', description: m.description || '', version: m.version || '',
+      })),
+      tag,
     };
   }
 
-  create(session, { mode, difficulty, capacity = defaultSeats(), assetCache, mods }) {
+  /** The `mods → …` log line: only what a room actually chose. A fixed pack is not a choice and listing it says nothing. */
+  modsLogLine(room) {
+    const fixed = this.fixedMods();
+    const parts = [];
+    const packs = room.mods.filter((id) => !fixed.includes(id));
+    if (packs.length) parts.push(packs.join('+'));
+    const enabledCode = this.codeMods.map((m) => m.id);
+    const code = room.codeMods || [];
+    if (enabledCode.length && code.length !== enabledCode.length) parts.push(code.length ? `code:${code.join('+')}` : 'code:none');
+    return parts.join(' ') || 'none';
+  }
+
+  create(session, { mode, difficulty, capacity = defaultSeats(), assetCache, mods, codeMods }) {
     if (this.emergency.active) return fail(ERR.SERVER_EMERGENCY);
     if (!capacityAllowed(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
-    const modsCheck = this.checkMods(mods);
+    const modsCheck = this.checkMods(mods, codeMods);
     if (!modsCheck.ok) return modsCheck;
     const cur = this.roomOf(session);
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
@@ -591,6 +642,7 @@ export class Lobby {
     room.maxAiPerRoom = this.maxAiPerRoom;
     room.ownerKey = key;
     room.mods = modsCheck.ids;
+    room.codeMods = modsCheck.codeIds;
     room.seats[0] = this.humanSeat(0, session);
     room.hostId = session.playerId;
     this.rooms.set(code, room);
@@ -598,10 +650,8 @@ export class Lobby {
     this.discovery.forget(session.playerId);
     session.notice = null;
     session.pendingResult = null;
-    // Only the packs a room could have chosen: the fixed ones are always on, so listing them says nothing (docs/PACKS.md §4).
-    const fixedMods = this.fixedMods();
-    const choosable = room.mods.filter((id) => !fixedMods.includes(id));
-    this.log.info(`[lobby] ${code} created (${mode}/${difficulty}${choosable.length ? `, mods ${choosable.join('+')}` : ''}) by ${session.name}`);
+    // Only what the room actually chose: a fixed pack is not a choice and an unabridged code-mod list is not one either.
+    this.log.info(`[lobby] ${code} created (${mode}/${difficulty}${this.modsLogLine(room) === 'none' ? '' : `, mods ${this.modsLogLine(room)}`}) by ${session.name}`);
     this.broadcastState(room);
     return OK;
   }
@@ -727,18 +777,21 @@ export class Lobby {
    * Host-only: narrow this room's content packs down (docs/PACKS.md §4). Changing what a match runs is as significant as
    * its difficulty, so the other humans are un-readied and have to look again.
    */
-  setMods(session, { mods }) {
+  setMods(session, { mods, codeMods }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
-    const check = this.checkMods(mods);
+    const check = this.checkMods(mods, codeMods);
     if (!check.ok) return check;
-    if (check.ids.join('|') !== room.mods.join('|')) {
+    const packsChanged = check.ids.join('|') !== room.mods.join('|');
+    const codeChanged = check.codeIds.join('|') !== (room.codeMods || []).join('|');
+    if (packsChanged || codeChanged) {
       this.dropReplay(room, session.playerId);
       room.mods = check.ids;
+      room.codeMods = check.codeIds;
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
-      this.log.info(`[lobby] ${room.code} mods → ${room.mods.join('+') || 'none'}`);
+      this.log.info(`[lobby] ${room.code} mods → ${this.modsLogLine(room)}`);
       this.broadcastState(room);
     }
     return OK;
@@ -1020,6 +1073,9 @@ export class Lobby {
         modeId: modeIdFor(room.mode, room.difficulty),
         // 「AI 队友最后选择」 (GitHub #338): fixed for the match
         aiPicksLast: room.mode !== 'solo' && room.aiPicksLast === true,
+        // The code mods this room picked (docs/MODS.md §4.6): a mod is loaded server-wide, and this is what tells it whether
+        // it is on for THIS match (`Match.modEnabled`).
+        codeMods: (room.codeMods || []).slice(),
         seats,
         // the spectator seats (header): watched like eliminated players, never players
         spectators: room.spectators.map((s) => s.playerId),

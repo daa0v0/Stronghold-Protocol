@@ -29,7 +29,7 @@ import { LoadoutButton } from './loadout.js';
 import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
 import { contentTagOf } from '../ui/contentPacks.js';
-import { roomContentOk } from '../ui/roomMods.js';
+import { roomContentOk, packRows, codeModRows, roomModsRequest } from '../ui/roomMods.js';
 import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
 
@@ -228,8 +228,33 @@ function DifficultyPicker({ room, isHost, busy, onPick }) {
   </div>`;
 }
 
-function CapacityPicker({ room, facts, busy, onPick }) {
-  const capacity = room.capacity || facts.seats.length;
+/**
+ * The room's own mod panel (docs/PACKS.md §4, docs/MODS.md §4.6): which content packs this match runs and which of the code
+ * mods the server ENABLED it uses. The host toggles; everyone else sees the same facts read-only. A code mod is loaded
+ * server-wide — this is the per-room switch the mods ask about (`Match.modEnabled`).
+ */
+function RoomModsPicker({ state, entries, isHost, busy, onPick }) {
+  if (!state) return null;
+  const packs = packRows(state.choosable, entries, state.mods);
+  const code = codeModRows(state.codeChoices, state.codeMods);
+  if (!packs.length && !code.length) return null;
+  const togglePack = (id, on) => onPick(packs.filter((r) => (r.id === id ? !on : r.on)).map((r) => r.id),
+    state.codeMods || []);
+  const toggleCode = (id, on) => onPick(packs.filter((r) => r.on).map((r) => r.id),
+    code.filter((r) => (r.id === id ? !on : r.on)).map((r) => r.id));
+  const row = (r, onToggle) => html`<button key=${r.id} type="button" aria-pressed=${r.on ? 'true' : 'false'}
+    class=${`dpick__opt${r.on ? ' is-active' : ''}`} disabled=${!isHost || !!busy}
+    title=${r.description || r.name} onClick=${() => onToggle(r)}>${r.name}</button>`;
+  return html`<div class="room-modpick" data-testid="room-modpick">
+    ${packs.length ? html`<span class="room-capacity__label">${t('本局内容包')}</span>
+      <div class="dpick" role="group" aria-label=${t('本局内容包')}>${packs.map((r) => row(r, (x) => togglePack(x.id, x.on)))}</div>` : null}
+    ${code.length ? html`<span class="room-capacity__label">${t('本局代码 mod')}</span>
+      <div class="dpick" role="group" aria-label=${t('本局代码 mod')}>${code.map((r) => row(r, (x) => toggleCode(x.id, x.on)))}</div>` : null}
+    ${isHost ? null : html`<span class="t-dim">${t('由房主选择')}</span>`}
+  </div>`;
+}
+
+function CapacityPicker({ room, facts, busy, onPick }) {  const capacity = room.capacity || facts.seats.length;
   const minCapacity = Math.max(1, ...facts.occupied.map((s) => s.seat + 1));
   return html`<div class="room-capacity" aria-label=${t('同盟席位')}>
     <span class="room-capacity__label">${t('人数上限')} <b class="num">${capacity}</b> ${t('人')}</span>
@@ -308,6 +333,11 @@ export function RoomScreen() {
   });
   const setDifficulty = (difficulty) => run('diff', () => net.request('room.setDifficulty', { difficulty }));
   const setCapacity = (capacity) => run('capacity', () => net.request('room.setCapacity', { capacity }));
+  /** The host's own mod choice for this room (docs/MODS.md §4.6): packs and code mods travel together. */
+  const setRoomMods = (packsOn, codeOn) => {
+    const state = roomModsState || { fixed: [], choosable: [], mods: [], codeMods: [] };
+    return run('roommods', () => net.request('room.setMods', roomModsRequest(state.fixed, packsOn, codeOn)));
+  };
   // spectator seats: the host frees one; a spectator takes a free player seat with room.join of this room
   const removeSpectator = (playerId) => run(`rs${playerId}`, () => net.request('room.removeSpectator', { playerId }));
   const sit = () => run('sit', () => net.request('room.join', { code: room.code }));
@@ -386,6 +416,8 @@ export function RoomScreen() {
     </header>
 
     ${coop ? html`<${CapacityPicker} room=${room} facts=${facts} busy=${busy} onPick=${setCapacity} />` : null}
+    ${coop ? html`<${RoomModsPicker} state=${roomModsState} entries=${useStore((s) => s.packEntries) || []}
+      isHost=${facts.isHost} busy=${busy} onPick=${setRoomMods} />` : null}
     ${roomModsLine}
     <main class=${`seats${coop ? facts.seats.length > 10 ? ' seats--dense' : facts.seats.length > 4 ? ' seats--expanded' : '' : ' seats--solo'}${coop && facts.seats.length === 10 ? ' seats--ten' : ''}`}>
       ${facts.seats.map((s, i) => html`<${SeatCard} key=${s ? `p${s.playerId}` : `e${i}`} seat=${s} index=${i} room=${room} facts=${facts}

@@ -50,3 +50,35 @@ export function modsForCreate(selected, choices) {
 export function roomContentOk(roomTag, appliedTag) {
   return !roomTag || !appliedTag || roomTag === appliedTag;
 }
+
+/**
+ * The content-pack rows of a room's own panel: only what a room may drop (a fixed pack is not a choice), with the room's
+ * current selection. `entries` is the pack index (for names); an id it does not know falls back to the id.
+ * @param {string[]} choosable @param {{ id: string, name?: string }[]} entries @param {string[]} chosen
+ */
+export function packRows(choosable, entries, chosen) {
+  const names = new Map((entries || []).map((e) => [e.id, e.name || e.id]));
+  const on = new Set(chosen || []);
+  return (choosable || []).map((id) => ({ id, name: names.get(id) || id, on: on.has(id) }));
+}
+
+/**
+ * The code-mod rows of a room's own panel: every code mod the server ENABLED (a room may tick any of them), ticked when
+ * this room runs it (docs/MODS.md §4.6).
+ * @param {{ id: string, name?: string, description?: string }[]} codeChoices @param {string[]} codeMods
+ */
+export function codeModRows(codeChoices, codeMods) {
+  const on = new Set(codeMods || []);
+  return (codeChoices || []).map((m) => ({ id: m.id, name: m.name || m.id, description: m.description || '', on: on.has(m.id) }));
+}
+
+/**
+ * The `room.setMods` payload for the host's panel: explicit lists, with the fixed packs kept in (a room cannot drop them, and
+ * the server refuses a list that leaves one out). A field left at "everything enabled" would be omitted, but the panel only
+ * sends this when the host actually changed something, so being explicit is the honest encoding.
+ * @param {string[]} fixed @param {string[]} packsOn @param {string[]} codeOn
+ * @returns {{ mods: string[], codeMods: string[] }}
+ */
+export function roomModsRequest(fixed, packsOn, codeOn) {
+  return { mods: [...new Set([...(fixed || []), ...(packsOn || [])])], codeMods: [...new Set(codeOn || [])] };
+}

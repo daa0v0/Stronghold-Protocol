@@ -430,7 +430,7 @@ export const C2S = {
   // Admission metadata uses the existing wire-v1 extension slot; published position layouts stay unchanged.
   'lobby.quickMatch': { capacity: (v) => capacityAllowed(v), assetCache: isAssetCacheReadiness, $optional: ['capacity', 'assetCache'] },
   'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), capacity: (v) => capacityAllowed(v),
-    assetCache: isAssetCacheReadiness, mods: isModSelection, $optional: ['capacity', 'assetCache', 'mods'] },
+    assetCache: isAssetCacheReadiness, mods: isModSelection, codeMods: isModSelection, $optional: ['capacity', 'assetCache', 'mods', 'codeMods'] },
   'room.join': { code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v), assetCache: isAssetCacheReadiness, $optional: ['assetCache'] },
   'room.leave': {},
   'room.ready': { ready: isBool },
@@ -463,7 +463,7 @@ export const C2S = {
   'room.skins': { skins: isSkinSelection },
   // 内容包 per match (docs/PACKS.md §4): the host narrows the owner-enabled packs down for this room; data packs (whose
   // tables were fixed at start) cannot be dropped here, and the server says so with ERR.MODS.
-  'room.setMods': { mods: isModSelection },
+  'room.setMods': { mods: isModSelection, codeMods: isModSelection, $optional: ['mods', 'codeMods'] },
   // spectator seats (remake feature, community report #26; MAX_SPECTATORS): take one of a co-op room's spectator seats —
   // in its lobby or while its match runs — never a player seat; the host frees one by playerId (the spectator gets
   // room.closed { reason: 'kicked' }). room.leave / g.leave leave a spectator seat like a player seat.

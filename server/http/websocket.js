@@ -29,13 +29,14 @@ export const WS_COMPRESSION = Object.freeze({
  * @param {{ data: object, log: object }} deps the game data the lobby's matches use, the logger
  * @returns {{ registry: SessionRegistry, lobby: Lobby, network: Network }}
  */
-export function createSessionStack(opts, { data, log, packs = null }) {
+export function createSessionStack(opts, { data, log, packs = null, codeMods = [] }) {
   const netOptions = netOptionsFrom(opts);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
   const lobbyOptions = lobbyOptionsFrom(opts);
   // packs (server/packs.js): the lobby needs it to know which content packs this server runs and to tag a room's own
-  // selection (docs/PACKS.md §4).
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, packs });
+  // selection (docs/PACKS.md §4). codeMods: the code mods the owner ENABLED — a room picks which of them its matches run
+  // (docs/MODS.md §4.6).
+  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions, packs, codeMods });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
   return { registry, lobby, network };
 }
