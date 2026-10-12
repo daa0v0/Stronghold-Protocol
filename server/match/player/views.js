@@ -71,7 +71,15 @@ export class PlayerViews {
         id: this.personalChoice.id,
         round: this.personalChoice.round,
         sourceItemId: this.personalChoice.sourceItemId,
-        cards: this.personalChoice.cards.map((c) => bountyCard(this.gd, c)),
+        // A mod's own question (docs/MODS.md §4.6): it carries its own title/desc and its cards are already view-shaped,
+        // while the 教鞭 Art's bounty candidates keep the shipped shape below.
+        modId: this.personalChoice.modId ?? null,
+        title: this.personalChoice.title ?? null,
+        desc: this.personalChoice.desc ?? null,
+        data: this.personalChoice.data ?? null,
+        cards: this.personalChoice.modId
+          ? this.personalChoice.cards.map((c) => ({ ...c }))
+          : this.personalChoice.cards.map((c) => bountyCard(this.gd, c)),
       } : null,
       shop: {
         level: this.shop.level,

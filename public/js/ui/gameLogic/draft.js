@@ -146,14 +146,29 @@ export function normalizeSp(sp, players = [], myId = null, fixedGroups = [], vie
   };
 }
 
-/** Adapt only the recipient's current PREP choice; never write it into the public draft. */
+/** The phases a MOD choice may be answered in: the settle that eliminated someone, up to the next prep (docs/MODS.md §4.6). */
+const MOD_CHOICE_PHASES = new Set([
+  PHASE.SETTLE, PHASE.ROUND_START, PHASE.INFO_CHECK, PHASE.BAND_DRAFT, PHASE.BATTLE_CHECK, PHASE.PREP,
+]);
+
+/**
+ * Adapt only the recipient's current personal choice; never write it into the public draft. The 教鞭 Art's choice lives inside
+ * the prep of its round; a MOD choice is asked right after the settle that eliminated a teammate and has to be answered before
+ * the next prep starts, so it is shown throughout that window and brings its own title/desc.
+ */
 export function normalizePersonalChoice(pub, priv, myId) {
   const choice = priv?.personalChoice;
-  if (pub?.phase !== PHASE.PREP || !priv || priv.playerId !== myId || priv.alive === false
-    || !choice || choice.round !== pub.round) return null;
+  if (!priv || priv.playerId !== myId || priv.alive === false || !choice) return null;
+  const modChoice = !!choice.modId;
+  if (modChoice ? !MOD_CHOICE_PHASES.has(pub?.phase) : (pub?.phase !== PHASE.PREP || choice.round !== pub.round)) return null;
   return {
-    ...normalizeSp({ family: 'bounty', name: t('教鞭 · 战术特训'), desc: t('请选择一项战术特训'),
-      cards: choice.cards, turn: myId, order: [myId], picks: {} }),
+    ...normalizeSp({
+      family: modChoice ? 'tactic' : 'bounty',
+      name: (modChoice && choice.title) || t('教鞭 · 战术特训'),
+      desc: (modChoice && choice.desc) || t('请选择一项战术特训'),
+      cards: choice.cards, turn: myId, order: [myId], picks: {},
+    }),
     id: choice.id,
+    modId: choice.modId ?? null,
   };
 }

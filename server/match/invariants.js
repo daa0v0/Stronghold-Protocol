@@ -26,6 +26,8 @@
 import { PHASE, BOND_LAYER_CAP } from '../../shared/constants.js';
 import { FIELD, canPlace, placeClass, positionClass, parseKey } from './board.js';
 import { computeBonds } from './bondsMeta.js';
+// The phases a mod's own choice may be answered in (docs/MODS.md §4.6) — it is not tied to a prep the way the Art's is.
+import { MOD_CHOICE_WINDOW } from './match/modChoice.js';
 
 const PHASES = new Set(Object.values(PHASE));
 
@@ -83,11 +85,27 @@ export function collectViolations(m, { limit = 25 } = {}) {
       if (ps.shop.slots.length || ps.offers.length || ps.bounties.length) fail(`${id}: eliminated but keeps shop/offers/bounties`);
       if (ps.funds || ps.pendingFunds) fail(`${id}: eliminated with funds ${ps.funds}+${ps.pendingFunds}`);
     }
-    // 教鞭's personal choice (Match.offerBountyChoice): resolved before the prep ends — by its owner, the deadline or the bot
+    // 教鞭's personal choice (Match.offerBountyChoice): resolved before the prep ends — by its owner, the deadline or the bot.
+    // A CODE MOD's choice (Match.offerModChoice, docs/MODS.md §4.6) is a different animal: it is asked in the window between
+    // the settle that eliminated someone and the next prep, it lives outside PREP by design, and its cards are the mod's own
+    // (they carry no bounty `effectId`). Both live in `ps.personalChoice`, so the rule has to know which one it is looking at.
     const pc = ps.personalChoice;
     if (pc) {
-      if (!ps.alive || ps.ready || m.phase !== PHASE.PREP || pc.round !== m.round) fail(`${id}: a personal choice outside its own prep (${m.phase} R${m.round}, offered in R${pc.round})`);
-      if (!Array.isArray(pc.cards) || !pc.cards.length || pc.cards.length > 3 || new Set(pc.cards.map((c) => c && c.effectId)).size !== pc.cards.length) fail(`${id}: personal choice of ${pc.cards && pc.cards.length} cards`);
+      const modChoice = !!pc.modId;
+      if (!ps.alive || ps.ready) fail(`${id}: a personal choice on a seat that is out or ready`);
+      if (modChoice) {
+        if (!MOD_CHOICE_WINDOW.includes(m.phase)) fail(`${id}: a mod choice outside its window (${m.phase} R${m.round})`);
+      } else if (m.phase !== PHASE.PREP || pc.round !== m.round) {
+        fail(`${id}: a personal choice outside its own prep (${m.phase} R${m.round}, offered in R${pc.round})`);
+      }
+      // The Art's candidates are distinct bounties and at most 3 (its message is unchanged); a mod's cards are its own
+      // (they carry no bounty `effectId`), so only their count is capped.
+      const tooMany = Array.isArray(pc.cards) && pc.cards.length > (modChoice ? 8 : 3);
+      const repeated = !modChoice && Array.isArray(pc.cards)
+        && new Set(pc.cards.map((c) => c && c.effectId)).size !== pc.cards.length;
+      if (!Array.isArray(pc.cards) || !pc.cards.length || tooMany || repeated) {
+        fail(`${id}: personal choice of ${pc.cards && pc.cards.length} cards`);
+      }
     }
 
     // pieces

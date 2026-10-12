@@ -75,14 +75,19 @@ export class MatchSettle {
       this.dispatch(ps, 'onBattleResult', { result: r, lpLoss: loss, perfect: counted === 0 && r.perfect !== false, unite: uniteResult || null, uniteResults });
       ps.recompute();
     }
+    const justOut = [];
     for (const ps of alive) {
       if (ps.lp <= 0) {
         this.applyLp(ps, 0);
         ps.eliminate(this.round);
+        justOut.push(ps);
         this.toast(ps, 'error', '你的目标生命值耗尽，已被淘汰');
         this.tickerText(msg('{name}博士的目标生命值已耗尽', { name: ps.name }), FLOW_TICKER_PRIORITY);
       }
     }
+    // The settle moment a CODE MOD may hook (docs/MODS.md §4.6, shared/modChoices.js) — a seat just went out, and a mod can
+    // ask the survivors something about it before the next prep starts.
+    this.runModSettleHooks(justOut);
     this.fields = [];
     this.watchers.clear();
     this.markPublic();

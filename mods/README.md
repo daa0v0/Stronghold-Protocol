@@ -12,6 +12,7 @@ Real, enableable mods live here — read one instead of only a sketch:
 | Folder | What it changes |
 |---|---|
 | `dup-strategies/` | 开局选策略（方针：芬/阿米娅/变形者集群…）时**同一池组内多人可选同一个** (`shared/matchRules.js` `bandDuplicates`) |
+| `revive-teammate/` | 有人被淘汰的那一回合结算后，**每个存活队友都被问一次**：扣自己 10 点血量把他救回来（**只有 1 点血**）(`shared/modChoices.js` + `Match.offerModChoice`) |
 | `shared-health-bar/` | 全队共用一条血条，大小可配置为队内所选方针总和的 `sum` 或 `max`（`shared/matchRules.js` `sharedLp`） |
 
 Each ships its own `config.json` (an owner can keep the mod installed but off) and its own test under `test/match/`.

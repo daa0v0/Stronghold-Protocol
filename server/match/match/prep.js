@@ -9,6 +9,9 @@ import { DELAYS } from './common.js';
 
 export class MatchPrep {
   enterPrep() {
+    // The window a mod choice lives in closes here (docs/MODS.md §4.6): it was offered after the settle that eliminated
+    // someone and must be answered before the prep starts, so an unanswered one takes the mod's decline path now.
+    this.expireModChoices();
     this.phase = PHASE.PREP;
     this.sp = null;
     const alive = this.alivePlayers();

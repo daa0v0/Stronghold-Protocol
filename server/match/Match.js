@@ -206,6 +206,8 @@ import { MatchSettle } from './match/settle.js';
 import { MatchRevive } from './match/revive.js';
 // The one place a player's health changes, so a code mod can make the team share it (docs/MODS.md, mods/shared-health-bar).
 import { MatchLp } from './match/lp.js';
+// The player-facing question a code mod may ask, and the settle moment it may hook (docs/MODS.md, mods/revive-teammate).
+import { MatchModChoice } from './match/modChoice.js';
 
 export { FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS } from './match/common.js';
 
@@ -425,7 +427,7 @@ export class Match {
 }
 
 // the method modules, in this order (a name defined twice is an error, never a silent override)
-for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchReports, MatchUnite, MatchBoss, MatchSettle, MatchRevive, MatchLp]) {
+for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchReports, MatchUnite, MatchBoss, MatchSettle, MatchRevive, MatchLp, MatchModChoice]) {
   for (const key of Reflect.ownKeys(part.prototype)) {
     if (key === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(Match.prototype, key)) throw new Error(`Match.${String(key)} is defined twice`);

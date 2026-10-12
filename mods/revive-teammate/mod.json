@@ -1,0 +1,10 @@
+{
+  "id": "revive-teammate",
+  "name": "淘汰当场复活",
+  "englishName": "Revive an eliminated teammate on the spot",
+  "version": "2.0.0",
+  "app": ">=0.2.4",
+  "authors": ["Stronghold Protocol"],
+  "description": "有人被淘汰的那一回合结算后，每个存活队友都会收到一个选择：扣自己 10 点血量把他救回来（只有 1 点血量）。任一队友选择即可（先选的生效），准备期开始前未作答视为放弃。config.json 可调代价与复活血量。",
+  "entry": "main.mjs"
+}

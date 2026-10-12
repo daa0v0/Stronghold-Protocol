@@ -35,9 +35,14 @@ export class MatchIntents {
       case 'g.art': return ps.useArt(msg.itemUid, msg.row, msg.col, msg.dir);
       case 'g.destroy': return ps.destroy(msg.uid);
       case 'g.reward': return ps.pickReward(msg.idx);
-      case 'g.choice': return msg.choiceId !== undefined
-        ? this.pickPersonalChoice(ps, msg.idx, msg.choiceId)
-        : this.pickCard(ps, msg.idx, msg);
+      case 'g.choice': {
+        // A mod's own question (docs/MODS.md §4.6): it is answered in the window after a settle, and its pick runs the
+        // mod's handler instead of becoming a bounty.
+        if (ps.personalChoice && ps.personalChoice.modId) return this.pickModChoice(ps, msg.idx, msg.choiceId);
+        return msg.choiceId !== undefined
+          ? this.pickPersonalChoice(ps, msg.idx, msg.choiceId)
+          : this.pickCard(ps, msg.idx, msg);
+      }
       case 'g.ready': return ps.setReady(!!msg.ready);
       case 'g.emote': return this.emote(ps, msg.id);
       // playerId: the player tapped (a shared field names two) — the watch preference (item 56)

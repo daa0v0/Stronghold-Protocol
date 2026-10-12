@@ -175,6 +175,7 @@ export async function setup(ctx) {
 | 目录 | 做什么 | 用到的扩展点 |
 |---|---|---|
 | `mods/dup-strategies/` | **开局选策略（方针）时，同一池组内多名玩家可以选择同一个**（原版队友已选的方针不能再选）。 | `shared/matchRules.js` 的 `bandDuplicates` |
+| `mods/revive-teammate/` | **有人被淘汰的那一回合结算后，每个存活队友都会被问一次**：要不要扣自己 10 点血量把他救回来（**只有 1 点血**）。任一队友选择即可，先选的生效；准备期开始前未作答视为放弃。 | `shared/modChoices.js`（`registerModSettleHook` + `registerModChoice`）、`Match.offerModChoice/pickModChoice/autoModChoice`、`Match.revivePlayer()`/`applyLp()` |
 | `mods/shared-health-bar/` | **全队共用一条血条**：所有人始终持有同一个血量值，大小可配置为队内所选方针 `totalHp` 的**总和**或**最高**（也可按建池时的当前血量取）。 | `shared/matchRules.js` 的 `sharedLp`、健康值收口 `Match.applyLp()` |
 
 启用方式与任何 mod 一样：`/admin → 代码 mod → 启用`（或 `runtime/server-settings.json` 的 `mods.enabled`），然后**重启**。
@@ -254,6 +255,44 @@ export async function setup(ctx) {
 > 界面：血量数值本身已经全队一致（每个座位显示同一个数），但**客户端仍按座位画 N 条进度条**。要把它画成"一条"需要下发一个
 > 视图字段并在 `ui/teamPanel.js` / `ui/hud.js` 合并渲染——那是核心改动（协议视图字段要登记，见上面的注意事项），不属于这个
 > mod 的范围。
+
+**⑤ 让 mod 向玩家提问：`shared/modChoices.js`**
+
+原版只有一种玩家选择（教鞭的个人选择，选中的卡变成悬赏）。mod 想"问点什么"（"花 10 点血量复活他？"）既不能新增消息
+（那是协议修订），也不能改写 ESM 导出，所以**管道由核心提供、规则由 mod 提供**：
+
+```js
+import { registerModChoice, registerModSettleHook } from '../../shared/modChoices.js';
+
+export async function setup(ctx) {
+  registerModChoice({
+    id: 'my-question',
+    onPick(m, ps, { card, idx, data }) { /* 玩家作答 */ },
+    onDecline(m, ps, { data }) { /* 超时或未作答 */ },
+  });
+  registerModSettleHook((m, { eliminated }) => {
+    // 每一局里"有人出局"的那次结算各调用一次；eliminated 是本次出局的座位（不含中途退出的人）
+    for (const out of eliminated) for (const ps of m.alivePlayers()) {
+      m.offerModChoice(ps, 'my-question', { title: '…', desc: '…', cards: [{ … }, { … }], data: { target: out.playerId } });
+    }
+  });
+}
+```
+
+机制与边界（都写进了代码与不变量）：
+
+- **复用现有通道**：问题存在 `ps.personalChoice` 里，于是 `m.private`、`g.choice { idx, choiceId }` 与客户端的 `ChoiceView`
+  全都不用改——**没有新增任何 wire 类型**；
+- **窗口**：`settle.js` 在淘汰发生后调用结算钩子；`MOD_CHOICE_WINDOW`（SETTLE → 下一回合准备期）内可以作答，
+  `enterPrep()` 一进来就 `expireModChoice`（走 mod 的 `onDecline`），所以"未作答＝放弃"由 mod 定义；
+- **一次一个**：已经有选择在等待的玩家不会被再问（`BUSY`），**AI 座位从不被提问**（`BOT`）——它没法自己回答；
+- **作答路由**：`g.choice` 在 `ps.personalChoice.modId` 存在时走 `pickModChoice` → mod 的 `onPick`，而不是变成悬赏；
+- **不变量审计知道这回事**：`invariants.js` 里"个人选择只能在准备期、最多 3 张、不能重复"这套规则是**教鞭的**，
+  对 mod 选择改为按窗口与 `cards ≤ 8` 检查——否则一局合法对局会被审计判违规（我在实现 mod 2 时就被它挡下来了）；
+- **文案**：`mods/` 不在 i18n 扫描范围内（`tools/i18n.mjs` 只扫 `public/js`、`shared`、`server`），所以 mod 自带的中文
+  不会让 `i18n check --strict` 失败；想让 mod 的卡也走四语言，就随 mod 附一个 `lang` 内容包（§3.1）；
+- **与共享血条的交互**：两个 mod 同时启用时，10 点代价走 `Match.applyLp()`，共享规则下由**那条共享血条**承担（全队同减），
+  复活者的血量也由共享血条决定（不再是 1 点）；血条为 0 时 `revivePlayer` 返回 `TEAM_BAR_EMPTY`，mod 会拒绝并如实记录。
 
 ## 5. 什么永远做不到（结构性限制）
 

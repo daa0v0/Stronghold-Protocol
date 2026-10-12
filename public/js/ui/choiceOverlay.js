@@ -222,12 +222,12 @@ export function ChoiceView({ pub, sp, myId, solo, personal = false, busyIdx = nu
     <div class="spov__inner">
       <header class="spov__head">
         <div class="spov__titles">
-          <${MicroLabel} tone="mint">${personal ? t('教鞭选择') : t('CONTINGENCY // 机变阶段')}</${MicroLabel}>
+          <${MicroLabel} tone="mint">${personal ? (sp.modId && sp.name ? sp.name : t('教鞭选择')) : t('CONTINGENCY // 机变阶段')}</${MicroLabel}>
           <h2 class=${cx('spov__title', special && 'is-special')}>${sentText(sp.name, rawFam?.name, fam?.name) || fam?.name || t('机变')}<span class="spov__bar">|</span><span class="spov__desc"><${RichText} text=${sentText(sp.desc, rawFam?.desc, fam?.desc) || fam?.desc || t('选择一项')} /></span></h2>
           <p class="spov__sub">${sp.done && grouped ? (readonly ? t('该组已完成选择') : t('本组已完成，等待其他组')) : timed ? (personal ? t('休整期结束时未选择将自动选定') : t('倒计时结束后仍未选定将自动分配')) : t('选择一项（无时间限制）')}${mine == null && myTurn ? t(' · 点击卡牌选中，再次点击确认') : ''}</p>
         </div>
         <div class="spov__turn">
-          ${personal ? html`<span class="spov__turntxt is-mine">${t('从候选中选择一项战术特训')}</span>`
+          ${personal ? html`<span class="spov__turntxt is-mine">${sp.modId && sp.desc ? sp.desc : t('从候选中选择一项战术特训')}</span>`
             : sp.done && grouped ? html`<span class="spov__turntxt is-done"><${Icon} name="check" />${readonly ? t('该组已完成选择') : t('本组已完成，等待其他组')}</span>`
             : mine != null ? html`<span class="spov__turntxt is-done"><${Icon} name="check" />${t('已完成选择')}</span>`
             : myTurn ? html`<span class="spov__turntxt is-mine">${t('当前轮到你决策')}</span>`
