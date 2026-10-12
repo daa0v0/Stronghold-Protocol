@@ -181,7 +181,8 @@ test('runtime AI policy defaults unlimited, trims only trailing AI, broadcasts a
   assert.equal(r.seats[second.seat], second);
   assert.equal(r.seats[last.seat], null);
   assert.equal(r.seatOf(human.playerId).seat, 3);
-  assert.equal(host.frames.at(-1).maxAiPerRoom, 2);
+  // Every room state is followed by a room.mods frame (docs/PACKS.md §4), so the ceiling is on the last STATE frame.
+  assert.equal(host.frames.filter((f) => f.t === 'room.state').at(-1).maxAiPerRoom, 2);
   error(lobby.addBot(host), ERR.AI_LIMIT);
   const human2 = player('Human 2'); join(r, human2);
   const later = room(player('Later'), 4);
