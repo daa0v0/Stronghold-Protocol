@@ -76,7 +76,7 @@ export function scanMods(dir) {
       for (const key of Object.keys(manifest)) {
         // `type` is already a problem above (a pack field in a mod manifest), not an ignored extra: say it once.
         if (key === 'type') continue;
-        if (!['id', 'name', 'version', 'app', 'authors', 'credits', 'license', 'entry'].includes(key)) {
+        if (!['id', 'name', 'englishName', 'description', 'version', 'app', 'authors', 'credits', 'license', 'entry'].includes(key)) {
           warnings.push({ where, warning: `"${key}" is not a mod field (ignored)` });
         }
       }
@@ -137,7 +137,9 @@ export function modsReport(scan, { enabled = [] } = {}, runtime = {}) {
   return {
     enabled: [...on],
     mods: scan.mods.map((m) => ({
-      id: m.id, name: m.manifest.name || m.id, version: m.manifest.version || '', app: m.manifest.app || '',
+      id: m.id, name: m.manifest.name || m.id, englishName: m.manifest.englishName || '',
+      description: m.manifest.description || '',
+      version: m.manifest.version || '', app: m.manifest.app || '',
       entry: m.entry, where: `${MODS_DIR}/${m.id}/`,
       enabled: on.has(m.id), running: loadedIds.has(m.id), error: failedIds.get(m.id) || null,
     })),

@@ -339,10 +339,11 @@ export function RoomScreen() {
   // ui/assetPacks.js `appliedMods()`.
   const roomModsState = useStore((s) => s.mods, shallowEqual);
   const roomModsFresh = roomModsState ? roomContentOk(roomModsState.tag, contentTagOf(roomModsState.mods)) : true;
-  const roomModsLine = roomModsState && roomModsState.mods.length
+  // Only the packs a room can actually turn off: a fixed one is always on, so listing it says nothing (docs/PACKS.md §4).
+  const roomChoosable = roomModsState ? roomModsState.mods.filter((id) => !roomModsState.fixed.includes(id)) : [];
+  const roomModsLine = roomModsState && roomChoosable.length
     ? html`<div class=${`room-mods${roomModsFresh ? '' : ' is-stale'}`} data-testid="room-mods">
-        <span>${t('本局内容包')}</span><b>${roomModsState.mods.join(', ')}</b>
-        ${roomModsState.fixed.length ? html`<span class="t-dim">${t('固定')}: ${roomModsState.fixed.join(', ')}</span>` : null}
+        <span>${t('本局内容包')}</span><b>${roomChoosable.join(', ')}</b>
         ${roomModsFresh ? null : html`<span class="t-orange" data-testid="room-mods-stale">${t('本局内容包与页面不一致，请刷新页面')}</span>`}
       </div>`
     : null;

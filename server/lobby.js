@@ -556,8 +556,13 @@ export class Lobby {
    */
   modsFrame(room) {
     const tag = this.packs ? this.packs.tagOf(room.mods).tag : '';
-    // `code` too: a client may hold frames for a room it has already left, and the frame must say which room it is about.
-    return { t: 'room.mods', code: room.code, mods: room.mods.slice(), fixed: this.fixedMods(), tag };
+    const fixed = this.fixedMods();
+    // `choosable`: what a room can actually turn off. A fixed pack (a type whose `live` is false had its tables set when the
+    // process started) is reported but never offered as a choice, so a client lists only real choices (docs/PACKS.md §4).
+    return {
+      t: 'room.mods', code: room.code, mods: room.mods.slice(), fixed,
+      choosable: room.mods.filter((id) => !fixed.includes(id)), tag,
+    };
   }
 
   create(session, { mode, difficulty, capacity = defaultSeats(), assetCache, mods }) {
@@ -593,7 +598,10 @@ export class Lobby {
     this.discovery.forget(session.playerId);
     session.notice = null;
     session.pendingResult = null;
-    this.log.info(`[lobby] ${code} created (${mode}/${difficulty}${room.mods.length ? `, mods ${room.mods.join('+')}` : ', no packs'}) by ${session.name}`);
+    // Only the packs a room could have chosen: the fixed ones are always on, so listing them says nothing (docs/PACKS.md §4).
+    const fixedMods = this.fixedMods();
+    const choosable = room.mods.filter((id) => !fixedMods.includes(id));
+    this.log.info(`[lobby] ${code} created (${mode}/${difficulty}${choosable.length ? `, mods ${choosable.join('+')}` : ''}) by ${session.name}`);
     this.broadcastState(room);
     return OK;
   }

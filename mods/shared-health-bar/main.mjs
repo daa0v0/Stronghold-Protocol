@@ -41,6 +41,6 @@ export async function setup(ctx) {
   const rule = applied.includes('sharedLp');
   const what = config.source === 'lp' ? '当前血量' : '所选方针的 totalHp';
   ctx.log.info(rule
-    ? `全队共享一条血条：大小 = 队内${what}的${config.mode === 'max' ? '最高值' : '总和'}`
+    ? `全队共享一条血条：大小 = 队内${what} 的${config.mode === 'max' ? '最高值' : '总和'}`
     : '未启用');
 }

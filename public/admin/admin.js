@@ -184,10 +184,21 @@ function renderPacks(body) {
   const tbody = $('packs-body');
   if (!tbody) return;
   tbody.textContent = '';
-  const packs = (body && body.packs) || [];
+  const all = (body && body.packs) || [];
+  // A fixed pack (a type whose `live` is false — its tables were set when the server started) is always on and no room can
+  // drop it, so it is summarised below instead of taking a row that looks like a choice (docs/PACKS.md §4).
+  const packs = all.filter((p) => p.live !== false);
+  const fixedPacks = all.filter((p) => p.live === false);
   text('packs-count', packs.length);
   text('packs-tag', body && body.tag ? body.tag : '—');
   show('packs-empty', packs.length === 0);
+  const fixedLine = $('packs-fixed');
+  if (fixedLine) {
+    fixedLine.hidden = fixedPacks.length === 0;
+    fixedLine.textContent = fixedPacks.length
+      ? `${fixedPacks.length} 个固定内容包随服务器启动，任何房间都不能关掉：` + fixedPacks.map((p) => `${p.id}（${p.type}）`).join('、')
+      : '';
+  }
   // Two packs rewriting the same resource URL: both load, the later id wins, and the operator should know (docs/PACKS.md §4).
   const conflicts = (body && body.conflicts) || [];
   const conflictLine = $('packs-conflicts');
@@ -282,7 +293,15 @@ function renderMods(body) {
       return td;
     };
     cell(m.id, 'mono');
-    cell(m.name);
+    const nameCell = cell(m.name);
+    // The manifest's own words: what this mod does, so an owner can decide without opening the folder (docs/MODS.md).
+    if (m.description) {
+      nameCell.title = m.description;
+      const note = document.createElement('div');
+      note.className = 'dim';
+      note.textContent = m.description;
+      nameCell.appendChild(note);
+    }
     cell(m.version);
     cell(m.entry, 'mono');
     cell(m.app || '任意');

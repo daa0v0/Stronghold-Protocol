@@ -91,6 +91,6 @@ export async function setup(ctx) {
   const config = readJson('config.json', DEFAULTS);
   setupRevive(config, ctx.log);
   const shared = config.sharedBarNote === false ? '' : '（若同时启用了全队共享血条，代价由那条共享血条承担，复活血量也由它决定）';
-  ctx.log.info(`已启用：被淘汰时结算后询问每个存活队友，任一队友支付 ${config.cost} 点血量可将其以 `
-    + `${config.reviveLp} 点血量复活；准备期开始前未作答视为放弃${shared}`);
+  ctx.log.info(`已启用：有人被淘汰的那次结算后，会询问每个存活队友；任一队友支付 ${config.cost} 点血量即可将其以 `
+    + `${config.reviveLp} 点血量复活，准备期开始前未作答视为放弃${shared}`);
 }
