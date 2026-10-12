@@ -57,8 +57,8 @@ import { StatsHost } from './screens/stats.js';
 import { recordResult, installStatsRecorder } from './ui/stats.js';
 import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
 import { installSkinsSync } from './ui/skins.js';
-import { installAssetPacks } from './ui/assetPacks.js';
-import { installContentPacks } from './ui/contentPacks.js';
+import { installAssetPacks, applyRoomMods } from './ui/assetPacks.js';
+import { installContentPacks, contentEntries } from './ui/contentPacks.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { MAX_SEATS } from '../../shared/constants.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
@@ -165,7 +165,10 @@ function backToLobby() {
   clearTimeout(restoreTimer);
   const s = store.get();
   if (s.room || s.match.public) closeAllDialogs();
-  store.set({ room: null, match: emptyMatch(), ticker: [], emotes: [] });
+  store.set({ room: null, match: emptyMatch(), ticker: [], emotes: [], mods: null });
+  // Leaving a room restores every pack this server loaded (docs/PACKS.md §4): the manifest is only refetched when that
+  // actually changes the replacements in force (ui/assetPacks.js).
+  applyRoomMods(null);
   store.patch('ui', { restoring: false });
 }
 
@@ -213,7 +216,8 @@ function onRoomState(msg) {
   if (myId != null && seats.length && !seats.some((s) => s && s.playerId === myId) && !isSpectating(room, myId)) {
     // We are no longer seated (kicked / left elsewhere) — neither in a player seat nor a spectator seat.
     if (store.get().room) toast(t('你已不在该同盟中'), 'warn');
-    store.set({ room: null, match: emptyMatch() });
+    store.set({ room: null, match: emptyMatch(), mods: null });
+    applyRoomMods(null);
     return;
   }
   const prevRoom = store.get().room;
@@ -251,6 +255,13 @@ function wireNet() {
   net.on('replaced', () => toast(t('该身份已在其他页面登录，本页已断开'), 'warn', { ttl: 6000 }));
   net.on('unhandledError', (err) => toastError(err));
   net.on('room.state', onRoomState);
+  // room.mods (docs/PACKS.md §4): the content packs this match runs, right after room.state. The page applies the ones it
+  // knows (ui/assetPacks.js) and keeps the room's own tag, so the room screen can say whether this page matches the match.
+  net.on('room.mods', (msg) => {
+    const mods = Array.isArray(msg.mods) ? msg.mods.slice() : [];
+    store.set({ mods: { code: msg.code || null, mods, fixed: Array.isArray(msg.fixed) ? msg.fixed.slice() : [], tag: msg.tag || '' } });
+    applyRoomMods(mods);
+  });
   net.on('room.closed', (msg) => {
     backToLobby();
     const known = Object.hasOwn(CLOSE_REASON, String(msg.reason)) ? CLOSE_REASON[msg.reason] : null;
@@ -409,8 +420,9 @@ async function boot() {
   // shows on the next page load, like a language pack).
   installAssetPacks();
   // The content identity of the server (docs/PACKS.md §4): the pack list and the tag this page computes, compared with
-  // GET /healthz.mods — what 设置 → 问题反馈 shows and a bug report carries (ui/contentPacks.js).
-  installContentPacks();
+  // GET /healthz.mods — what 设置 → 问题反馈 shows and a bug report carries (ui/contentPacks.js). The entries reach the
+  // store as well, so the create-room panel (screens/lobby.js) can offer the packs once the index has arrived.
+  installContentPacks().ready.then(() => store.set({ packEntries: contentEntries() }));
   net.attachBrowserHooks();
   // Audio: unlock on first gesture, BGM follows the route / match phase (js/audio.js).
   installAudio({ getManifest: () => data.get('assets'), subscribe: store.subscribe, getState: store.get, selectRoute, settings: settingsStore.get() });

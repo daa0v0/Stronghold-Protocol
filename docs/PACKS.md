@@ -277,6 +277,14 @@ What a selection **does** depends on the type, which is why the frame says what 
 match looks (a client-side replacement the client applies for the room's set), while a `data` pack is part of the tables the
 server already simulates with — exactly why it cannot be switched per room.
 
+**Where a host picks it**: the create-room panel (screens/lobby.js) lists the identity packs the server runs — a live one
+as a checkbox, a non-live one shown but locked — and sends `mods` only when the selection is narrower than everything
+enabled, so a server without packs sends exactly the request it always did. The room screen shows what the match runs and
+whether this page still knows that content (the room's `tag` against the tag of its `mods` as this page's index describes
+them; an id the page has never seen makes the two disagree, which is the "reload this page" signal). Entering such a room
+makes the page apply only the room's `assets` packs — and only when that actually changes a replacement, since it refetches
+the art manifest (ui/assetPacks.js `applyRoomMods`); leaving restores every pack the server loaded.
+
 ### Code and gameplay mods (the owner's decision, 2026-10-12)
 
 The study below kept third-party code out of packs. The owner has since decided that this project ships as an open

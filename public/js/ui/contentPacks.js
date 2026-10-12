@@ -19,9 +19,26 @@ export const PACK_INDEX_URL = '/packs/index.json';
 export const HEALTH_URL = '/healthz';
 
 let state = { tag: '', serverTag: '', packs: [], languages: 0, summary: '', mismatch: false, loaded: false, error: null };
+/** The index entries and the app version they were computed from (a room's subset needs `contentTagOf`). */
+let entries = [];
+let app = '';
 
 /** What this page knows: its own content tag, the server's, the packs, and whether the two disagree. */
 export const contentState = () => ({ ...state, packs: state.packs.slice() });
+
+/** The pack entries this page read from the index (the create-room panel lists them; a room's subset tags them). */
+export const contentEntries = () => entries.slice();
+
+/**
+ * The content tag of a SUBSET of the packs this page knows — a room's selection (docs/PACKS.md §4). The whole-set tag is
+ * `contentState().tag`; comparing this one with `room.mods.tag` says whether the packs the page applied are the ones the
+ * match runs.
+ * @param {string[]} ids
+ */
+export function contentTagOf(ids) {
+  const wanted = new Set(ids || []);
+  return contentTag(app, entries.filter((e) => wanted.has(e.id)));
+}
 
 /** A pack list short enough for a mark: 'assets:hd-art@1.0.0, data:balance' (or '' without packs). */
 export const contentLabel = () => state.packs.map((p) => `${p.type}:${p.id}${p.version ? `@${p.version}` : ''}`).join(', ');
@@ -38,6 +55,8 @@ export async function loadContentTag({ fetchImpl = (url, init) => fetch(url, ini
     const packs = readPackIndex(json); // every supported type; the tag itself counts only the identity types
     const tag = contentTag(json && json.app, packs);
     const identity = packs.filter(isIdentityPack);
+    entries = packs;
+    app = String((json && json.app) || '');
     let serverTag = '';
     try {
       const h = await fetchImpl(healthUrl, { cache: 'no-store' });

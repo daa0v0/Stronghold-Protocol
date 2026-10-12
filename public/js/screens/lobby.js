@@ -28,6 +28,7 @@ import { store, useStore, shallowEqual, loadPref, savePref } from '../store.js';
 import { getConfig, getMode, getStage, useData } from '../data.js';
 import { t, tc, N_ } from '../../../shared/i18n.js';
 import { createLobbyDiscovery } from '../lobbyDiscovery.js';
+import { modChoices, modsForCreate } from '../ui/roomMods.js';
 import { LobbyOnlinePill, LobbyDiscoveryPanel, LobbyRoomList } from '../ui/lobbyDiscovery.js';
 
 /** Official mode texts (activity_table act2autochess.modeDataDict), fallback when config.json is absent. */
@@ -258,6 +259,14 @@ export function LobbyScreen() {
     return ROOM_CAPACITIES.includes(saved) ? saved : DEFAULT_SEATS;
   });
   const [code, setCode] = useState('');
+  /**
+   * 本局内容包 (docs/PACKS.md §4): the packs this room should run, or null for "everything the server enabled" — the
+   * panel is not even shown when the server runs no pack that changes the game, so the untouched flow stays as it was.
+   */
+  const [modsPick, setModsPick] = useState(() => {
+    const saved = loadPref('lobby.mods', null);
+    return Array.isArray(saved) ? saved.filter((x) => typeof x === 'string') : null;
+  });
   const [busy, setBusy] = useState(null);
   const discoveryRef = useRef(null);
   if (!discoveryRef.current) discoveryRef.current = createLobbyDiscovery({ net });
@@ -293,7 +302,15 @@ export function LobbyScreen() {
       if (alive.current) setBusy(null);
     }
   };
-  const create = () => run('create', () => net.request('room.create', { mode: roomMode, difficulty, ...(roomMode === 'coop' ? { capacity } : {}) }));
+  const choices = modChoices(useStore((s) => s.packEntries) || []);
+  const pickedMods = new Set(modsPick === null ? choices.toggle.map((m) => m.id) : modsPick);
+  const toggleMod = (id) => {
+    const next = choices.toggle.map((m) => m.id).filter((x) => (x === id ? !pickedMods.has(x) : pickedMods.has(x)));
+    setModsPick(next);
+    savePref('lobby.mods', next);
+  };
+  const create = () => run('create', () => net.request('room.create', { mode: roomMode, difficulty, ...(roomMode === 'coop' ? { capacity } : {}),
+    ...(modsForCreate([...pickedMods], choices) ? { mods: modsForCreate([...pickedMods], choices) } : {}) }));
   const quickMatch = () => run('quickMatch', () => net.request('lobby.quickMatch', matchCapacity ? { capacity: matchCapacity } : {}).catch((err) => {
     if (err?.code === ERR.ROOM_NOT_FOUND) { toast(t('暂无可加入的房间，请稍后重试或创建同盟。'), 'warn'); return; }
     throw err;
@@ -404,6 +421,21 @@ export function LobbyScreen() {
             ${ROOM_CAPACITIES.map((n) => html`<button key=${n} type="button" role="radio" aria-checked=${capacity === n ? 'true' : 'false'}
               class=${`capacity-select__opt${capacity === n ? ' is-active' : ''}`} onClick=${() => pickCapacity(n)}>${t('{n} 人', { n })}</button>`)}
           </div>
+        </div>` : null}
+        ${choices.toggle.length || choices.locked.length ? html`<div class="mods-select" data-testid="create-mods">
+          <div class="capacity-select__label">${t('本局内容包')} <${MicroLabel}>CONTENT PACKS<//></div>
+          <div class="mods-select__options">
+            ${choices.toggle.map((m) => html`<label key=${m.id} class="mods-select__opt">
+              <input type="checkbox" data-testid=${`mod-${m.id}`} checked=${pickedMods.has(m.id)} onChange=${() => toggleMod(m.id)} />
+              <span>${m.name}</span><small>${m.type}${m.version ? ` · ${m.version}` : ''}</small>
+            </label>`)}
+            ${choices.locked.map((m) => html`<label key=${m.id} class="mods-select__opt is-locked"
+              title=${t('数据包的表在服务器启动时就固定了，本局无法关闭')}>
+              <input type="checkbox" checked=${true} disabled=${true} />
+              <span>${m.name}</span><small>${m.type} · ${t('固定')}</small>
+            </label>`)}
+          </div>
+          <div class="create-box__hint">${t('只影响这一局：只勾选本局要用的内容包，未勾选的不会在本局生效。')}</div>
         </div>` : null}
         <div class="create-box">
           <${Tooltip} block=${true} text=${online ? null : t('正在连接服务器…')}>

@@ -22,6 +22,10 @@ export const PACK_INDEX_URL = '/packs/index.json';
 
 /** resource URL → { url, pack } of the merged packs (later index entries override earlier ones). */
 let overrides = new Map();
+/** The packs' own maps, by pack id (in index order), so a room can be handed a subset of them later. */
+let byPack = new Map();
+/** The pack ids whose replacements are in force: everything this server loaded until a room narrows it. */
+let selection = [];
 let report = { packs: [], conflicts: [], count: 0, loaded: false, error: null };
 
 /** What the packs did: the loaded ones, the URLs two of them fight over, and the error when the index was unreadable. */
@@ -79,24 +83,25 @@ export async function loadAssetPacks({ fetchImpl = (url, init) => fetch(url, ini
     const indexRes = await fetchImpl(url, { cache: 'no-store' });
     if (!indexRes || !indexRes.ok) throw new Error(`index HTTP ${indexRes ? indexRes.status : '???'}`);
     const packs = readPackIndex(await indexRes.json(), 'assets');
-    const merged = new Map();
-    const conflicts = [];
+    /** @type {Map<string, { version: string, map: Map<string, string> }>} per pack, so a room can narrow the set later */
+    const perPack = new Map();
     const loaded = [];
     for (const pack of packs) {
       const res = await fetchImpl(pack.files.map, { cache: 'no-store' });
       if (!res || !res.ok) { console.warn(`[packs] ${pack.id}: map unavailable`); continue; }
       const map = await res.json();
       if (!map || typeof map !== 'object' || Array.isArray(map)) { console.warn(`[packs] ${pack.id}: map is not an object`); continue; }
-      let count = 0;
+      const mine = new Map();
       for (const [key, to] of Object.entries(map)) {
         if (typeof to !== 'string' || !to) continue;
-        const prev = merged.get(key);
-        if (prev && prev.pack !== pack.id) conflicts.push({ url: key, packs: [prev.pack, pack.id] });
-        merged.set(key, { url: stamp(to, pack), pack: pack.id });
-        count++;
+        mine.set(key, stamp(to, pack));
       }
-      loaded.push({ id: pack.id, name: pack.name || pack.id, version: pack.version || '', overrides: count });
+      perPack.set(pack.id, { version: pack.version || '', map: mine });
+      loaded.push({ id: pack.id, name: pack.name || pack.id, version: pack.version || '', overrides: mine.size });
     }
+    byPack = perPack;
+    selection = loaded.map((p) => p.id);
+    const { merged, conflicts } = mergeSelection(selection);
     overrides = merged;
     report = { packs: loaded, conflicts, count: merged.size, loaded: true, error: null };
     if (loaded.length) console.info(`[packs] assets: ${loaded.length} pack(s), ${merged.size} resource URL(s) rewritten`);
@@ -108,6 +113,50 @@ export async function loadAssetPacks({ fetchImpl = (url, init) => fetch(url, ini
     return assetPackReport();
   }
 }
+
+/** Merge the packs of one selection, in index order (the later id wins), and report the URLs two of them fight over. */
+function mergeSelection(ids) {
+  const wanted = new Set(ids || []);
+  const merged = new Map();
+  const conflicts = [];
+  for (const [id, pack] of byPack) {
+    if (!wanted.has(id)) continue;
+    for (const [key, url] of pack.map) {
+      const prev = merged.get(key);
+      if (prev && prev.pack !== id) conflicts.push({ url: key, packs: [prev.pack, id] });
+      merged.set(key, { url, pack: id });
+    }
+  }
+  return { merged, conflicts };
+}
+
+/**
+ * Apply only the packs a room runs (docs/PACKS.md §4): `null` means every pack this server loaded. The manifest is
+ * refetched (a transform runs on load, so it has to see a pristine copy) whenever the effective mapping changes, which is
+ * the one case where entering or leaving a room costs a manifest request.
+ * @param {string[] | null} ids
+ * @param {{ invalidate?: (name: string) => void }} [opts] invalidate: the data store's (injectable for tests)
+ */
+export function applyRoomMods(ids, { invalidate } = {}) {
+  const next = ids === null || ids === undefined ? [...byPack.keys()] : [...byPack.keys()].filter((id) => ids.includes(id));
+  if (next.join('|') === selection.join('|')) return assetPackReport();
+  const before = overrides;
+  const { merged, conflicts } = mergeSelection(next);
+  selection = next;
+  overrides = merged;
+  const changed = before.size !== merged.size || [...merged].some(([key, hit]) => before.get(key)?.url !== hit.url);
+  report = { ...report, conflicts, count: merged.size };
+  if (changed) {
+    const drop = invalidate || ((name) => data.invalidate(name));
+    drop('assets');
+    console.info(`[packs] assets: room selection → ${selection.join(', ') || 'none'} (${merged.size} URL(s))`);
+  }
+  return assetPackReport();
+}
+
+/** The pack ids whose replacements are in force right now (a room's selection, or every loaded pack). */
+export const appliedMods = () => selection.slice();
+
 
 /**
  * Wire the packs into the data store: the transform is registered first (so it runs whenever data/assets.json arrives),

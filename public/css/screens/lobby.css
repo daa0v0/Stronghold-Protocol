@@ -255,6 +255,18 @@
 .capacity-select__opt:hover { color: var(--text-hi); border-color: var(--mint-600); }
 .capacity-select__opt.is-active { color: var(--mint-400); border-color: var(--mint-500); background: var(--mint-a20); }
 
+/* ---- 本局内容包 (docs/PACKS.md §4) ------------------------------------------------------------------- */
+.mods-select { display: flex; flex-direction: column; gap: .1rem; margin-top: .2rem; padding: .14rem .18rem; border: 1px solid var(--line-2); background: rgba(9, 13, 11, .7); }
+.mods-select__options { display: flex; flex-wrap: wrap; gap: .12rem .24rem; }
+.mods-select__opt { display: flex; align-items: center; gap: .08rem; color: var(--text-md); font-size: calc(.16 * var(--t)); }
+.mods-select__opt input { width: .2rem; height: .2rem; accent-color: var(--mint-500); }
+.mods-select__opt small { color: var(--text-lo); font-size: calc(.13 * var(--t)); }
+.mods-select__opt.is-locked { color: var(--text-dim); }
+.mods-select__opt.is-locked input { accent-color: var(--line-2); }
+.room-mods { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem; margin-top: .12rem; font-size: calc(.15 * var(--t)); color: var(--text-lo); }
+.room-mods b { color: var(--text-hi); font-family: var(--mono); }
+.room-mods.is-stale { color: var(--warn); }
+
 /* ---- create ------------------------------------------------------------------------------------------ */
 .create-box { margin-top: .3rem; display: flex; flex-direction: column; gap: .12rem; }
 .create-box .btn--xl { height: .92rem; font-size: calc(.32 * var(--t)); letter-spacing: .3em; }

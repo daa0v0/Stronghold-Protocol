@@ -26,6 +26,8 @@ import { SettingsButton } from '../ui/settings.js';
 import { LoadoutButton } from './loadout.js';
 import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
+import { contentTagOf } from '../ui/contentPacks.js';
+import { roomContentOk } from '../ui/roomMods.js';
 import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
 
@@ -328,8 +330,22 @@ export function RoomScreen() {
     }
   };
 
-  const statusLine = !online
-    ? html`<span class="t-orange"><${Icon} name="wifiOff" />${t('连接中断，正在重连…')}</span>`
+  // 本局内容包 (docs/PACKS.md §4): which packs this match runs, and whether this page knows that same content — the room's
+  // own tag against the tag of its `mods` as this page's index describes them (contentTagOf ignores an id it has never
+  // seen, so a page loaded before a pack was installed shows up here as a mismatch and asks for a reload). The page's
+  // *applied* art is a subset of that (data packs are the server's tables), which is why the comparison is not against
+  // ui/assetPacks.js `appliedMods()`.
+  const roomModsState = useStore((s) => s.mods, shallowEqual);
+  const roomModsFresh = roomModsState ? roomContentOk(roomModsState.tag, contentTagOf(roomModsState.mods)) : true;
+  const roomModsLine = roomModsState && roomModsState.mods.length
+    ? html`<div class=${`room-mods${roomModsFresh ? '' : ' is-stale'}`} data-testid="room-mods">
+        <span>${t('本局内容包')}</span><b>${roomModsState.mods.join(', ')}</b>
+        ${roomModsState.fixed.length ? html`<span class="t-dim">${t('固定')}: ${roomModsState.fixed.join(', ')}</span>` : null}
+        ${roomModsFresh ? null : html`<span class="t-orange" data-testid="room-mods-stale">${t('本局内容包与页面不一致，请刷新页面')}</span>`}
+      </div>`
+    : null;
+
+  const statusLine = !online    ? html`<span class="t-orange"><${Icon} name="wifiOff" />${t('连接中断，正在重连…')}</span>`
     : facts.spectating
       ? html`<span class="t-lo"><${Icon} name="eye" />${t('观战中 · 不占博士席位，模拟开始后可切换观看各位博士')}</span>`
     : !coop
@@ -367,6 +383,7 @@ export function RoomScreen() {
     </header>
 
     ${coop ? html`<${CapacityPicker} room=${room} facts=${facts} busy=${busy} onPick=${setCapacity} />` : null}
+    ${roomModsLine}
     <main class=${`seats${coop ? facts.seats.length > 10 ? ' seats--dense' : facts.seats.length > 4 ? ' seats--expanded' : '' : ' seats--solo'}${coop && facts.seats.length === 10 ? ' seats--ten' : ''}`}>
       ${facts.seats.map((s, i) => html`<${SeatCard} key=${s ? `p${s.playerId}` : `e${i}`} seat=${s} index=${i} room=${room} facts=${facts}
         myId=${me.playerId} busy=${busy} onAddBot=${addBot} onRemoveBot=${removeBot} onKick=${kick} onTransferHost=${transferHost} />`)}
