@@ -270,12 +270,15 @@ The owner decides what the server *may* load ("The owner's switches" above); the
 `room.setMods` changes it later; both accept only packs that change the game, and the room tells every client with
 
 ```
-room.mods { code, mods, fixed, choosable, codeMods, codeChoices, tag }
+room.mods { code, mods, fixed, choosable, codeMods, codeChoices, codeOptions, tag }
 ```
 
 sent right after `room.state` (and after every change to it). `mods` is what this match runs, `fixed` is what it cannot
 drop, and `tag` is the **room's own** content tag — the tag of its subset, not the server's — so a player can tell whether
-the page they loaded still matches the match they are in.
+the page they loaded still matches the match they are in. `codeOptions` carries, for every enabled code mod, the knobs it
+declared and the values this room set (docs/MODS.md §4.6), and `room.setMods { mods, codeMods, codeOptions }` sets all three
+at once — leaving `codeOptions` out CLEARS the room's values, so a client that only wants to change the packs sends the ones
+it already had.
 
 Two rules keep the panel honest about what is actually a choice:
 

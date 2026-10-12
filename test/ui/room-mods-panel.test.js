@@ -3,7 +3,8 @@
 // What the panel shows and what it sends: only the packs a room may drop (a fixed one is always on), every code mod the
 // server ENABLED (a room decides which of them its match runs), and a `room.setMods` payload that keeps the fixed packs in
 // because the server refuses a list that leaves one out.
-const { packRows, codeModRows, roomModsRequest, roomModsState } = await import('../../public/js/ui/roomMods.js');
+const { packRows, codeModRows, roomModsRequest, roomModsState, optionRows, setOptionValue, optionValuesFor } =
+  await import('../../public/js/ui/roomMods.js');
 const { test } = await import('node:test');
 const assert = (await import('node:assert/strict')).default;
 
@@ -64,4 +65,38 @@ test('roomModsRequest: explicit lists, the fixed packs kept in', () => {
     mods: ['stronghold-skins'], codeMods: [],
   }, 'dropping every choosable pack still names the fixed one');
   assert.deepEqual(roomModsRequest(['a'], ['a', 'a'], ['x', 'x']), { mods: ['a'], codeMods: ['x'] }, 'no duplicates');
+});
+
+test('roomModsRequest: the room option values travel with it, and are omitted when there are none', () => {
+  assert.deepEqual(roomModsRequest(['fixed'], ['p'], ['shared-health-bar'], { 'shared-health-bar': { mode: 'max' } }), {
+    mods: ['fixed', 'p'], codeMods: ['shared-health-bar'], codeOptions: { 'shared-health-bar': { mode: 'max' } },
+  });
+  assert.deepEqual(roomModsRequest(['fixed'], [], ['m'], { m: {} }), { mods: ['fixed'], codeMods: ['m'] },
+    'a mod with no values is not sent: leaving the field out would clear the room');
+});
+
+test('optionRows: the declaration, the room values, and what the host just picked', () => {
+  const entry = {
+    id: 'shared-health-bar', values: { mode: 'max' },
+    options: [
+      { key: 'mode', type: 'enum', values: ['sum', 'max'], default: 'sum', label: '血条大小', description: '相加或取最高' },
+      { key: 'source', type: 'enum', values: ['band', 'lp'], default: 'band', label: '血量来源', description: '' },
+      { key: 'cost', type: 'number', min: 1, max: 50, default: 10, label: '代价', description: '' },
+    ],
+  };
+  const rows = optionRows(entry);
+  assert.deepEqual(rows.map((r) => [r.key, r.value, r.set]), [
+    ['mode', 'max', true],        // the room set it
+    ['source', 'band', false],    // nothing set: the declared default
+    ['cost', 10, false],
+  ]);
+  assert.equal(rows[2].min, 1);
+  assert.equal(rows[0].description, '相加或取最高');
+  // what the host picks in the dialog shows, and counts as set
+  const changed = setOptionValue(setOptionValue({}, 'source', 'lp'), 'cost', 20);
+  const after = optionRows(entry, changed);
+  assert.deepEqual(after.map((r) => [r.key, r.value, r.set]), [['mode', 'max', true], ['source', 'lp', true], ['cost', 20, true]]);
+  // per-mod values for the request: the room's own values, then this dialog's changes
+  assert.deepEqual(optionValuesFor(entry.values, changed), { mode: 'max', source: 'lp', cost: 20 });
+  assert.deepEqual(optionValuesFor({ mode: 'max' }, { mode: 'sum' }), { mode: 'sum' }, 'the dialog wins');
 });

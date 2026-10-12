@@ -1417,5 +1417,11 @@
   "服务器带宽紧急保护已开启，暂时停止进入对局和在线补齐，请等待恢复": "Emergency bandwidth protection is active. Joining matches and downloading missing assets are temporarily stopped. Please wait for recovery.",
   "服务器带宽紧急保护已解除，对局继续；在线补齐需手动恢复": "Emergency bandwidth protection has ended. The match resumes; restart missing-asset downloads manually.",
   "服务器带宽紧急保护中，在线补齐已停止；已完成文件保留，恢复后可手动继续。": "Emergency bandwidth protection has stopped missing-asset downloads. Completed files are kept; continue manually after recovery.",
-  "本局代码 mod": "Code mods (this room)"
+  "本局代码 mod": "Code mods (this room)",
+  "已设置": "set",
+  "关": "Off",
+  "开": "On",
+  "本局附加内容": "Extras for this match",
+  "应用": "Apply",
+  "代码 mod": "Code mods"
 }

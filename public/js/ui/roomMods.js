@@ -96,11 +96,50 @@ export function codeModRows(codeChoices, codeMods) {
 
 /**
  * The `room.setMods` payload for the host's panel: explicit lists, with the fixed packs kept in (a room cannot drop them, and
- * the server refuses a list that leaves one out). A field left at "everything enabled" would be omitted, but the panel only
- * sends this when the host actually changed something, so being explicit is the honest encoding.
+ * the server refuses a list that leaves one out). `codeOptions` is the WHOLE map of per-mod values — the ones the room already
+ * had plus this dialog's changes — because a request that leaves the field out clears the room's stored values.
  * @param {string[]} fixed @param {string[]} packsOn @param {string[]} codeOn
- * @returns {{ mods: string[], codeMods: string[] }}
+ * @param {Record<string, Record<string, any>>} [codeOptions]
+ * @returns {{ mods: string[], codeMods: string[], codeOptions?: Record<string, Record<string, any>> }}
  */
-export function roomModsRequest(fixed, packsOn, codeOn) {
-  return { mods: [...new Set([...(fixed || []), ...(packsOn || [])])], codeMods: [...new Set(codeOn || [])] };
+export function roomModsRequest(fixed, packsOn, codeOn, codeOptions = {}) {
+  const out = { mods: [...new Set([...(fixed || []), ...(packsOn || [])])], codeMods: [...new Set(codeOn || [])] };
+  const kept = {};
+  for (const [modId, values] of Object.entries(codeOptions || {})) {
+    if (values && Object.keys(values).length) kept[modId] = { ...values };
+  }
+  if (Object.keys(kept).length) out.codeOptions = kept;
+  return out;
+}
+
+/**
+ * The option controls of one code mod (docs/MODS.md §4.6): its declaration, and the value each control should show —
+ * what the ROOM already set for this match, else what the host just picked in the dialog, else the declared default.
+ * @param {{ id: string, options?: any[], values?: Record<string, any> }} entry the frame's per-mod entry
+ * @param {Record<string, any>} [changed] what the host changed in this dialog
+ * @returns {{ key: string, label: string, description: string, type: string, values?: any[], min?: number, max?: number,
+ *   value: any, set: boolean }[]}
+ */
+export function optionRows(entry, changed = {}) {
+  const room = (entry && entry.values) || {};
+  return ((entry && entry.options) || []).map((o) => {
+    const mine = Object.prototype.hasOwnProperty.call(changed, o.key) ? changed[o.key] : undefined;
+    const value = room[o.key] !== undefined ? room[o.key] : mine !== undefined ? mine : o.default;
+    return {
+      key: o.key, label: o.label || o.key, description: o.description || '', type: o.type,
+      values: o.values, min: o.min, max: o.max, value,
+      // `set`: this room (or this dialog) pins the knob, so the control reads "已设置" rather than "默认"
+      set: room[o.key] !== undefined || mine !== undefined,
+    };
+  });
+}
+
+/** One option changed: a new per-mod values object for the dialog's state (never mutates). */
+export function setOptionValue(values, key, value) {
+  return { ...(values || {}), [key]: value };
+}
+
+/** Per-mod values for the request: the room's own values, then this dialog's changes on top. */
+export function optionValuesFor(roomValues, changed) {
+  return { ...(roomValues || {}), ...(changed || {}) };
 }

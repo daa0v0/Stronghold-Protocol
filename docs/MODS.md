@@ -205,6 +205,30 @@ export async function setup(ctx) {
 - `Match.rules` 是两者合并后的结果，也是四个读取方真正读的东西（血量收口、方针抽选、下发视图、审计）。
   `Match.modEnabled(id)`：房间没有收窄时＝全部启用，收窄了就只看它选中的。
 
+**①b mod 自己的可调选项（`mod.json` 的 `options`）**
+
+一个 mod 常有旋钮（"总和还是最高？""按方针还是按当前血量？"）。它可以在 `mod.json` 里声明，**房间的房主按局设置**，
+核心只按声明校验、不需要知道旋钮的含义（`shared/modOptions.js`）：
+
+```json
+"options": {
+  "mode":   { "type": "enum", "values": ["sum", "max"], "default": "sum", "label": "血条大小", "description": "相加或取最高" },
+  "source": { "type": "enum", "values": ["band", "lp"], "default": "band", "label": "血量来源" }
+}
+```
+
+- `type` 只能是 `enum`（带 `values`）、`number`（可带 `min`/`max`）或 `boolean`；每项必须有 `default`。
+- 声明**整块**不是对象 → 该 mod 被跳过；**单个选项**写错 → 只丢掉那一项并给出警告（一个旋钮的笔误不该让整个 mod 失效）。
+- 房间提交的取值 `{ "<modId>": { "<option>": 值 } }` 会被逐项校验：未声明的键、类型不符、越界一律**拒绝**（`ERR.MODS` 带原因）；
+  只有"服务器已启用 **且** 本局确实运行"的 mod 才能带取值。
+- **取值优先级**：房间本局取值 > mod 自己的 `config.json`（服务器默认）> 声明里的 `default`。所以 mod 应当这样写：
+  ```js
+  const room = m.modOptions(MOD_ID);            // 房间设了什么（可能为空对象）
+  const mode = room.mode ?? config.mode ?? 'sum';
+  ```
+- 房间界面（弹窗）按声明自动渲染控件：`enum` → 分段按钮、`boolean` → 开/关、`number` → 数字输入；只渲染房主可改，
+  其他人看到同样的信息但不可点。界面只回传**房间已有的取值 + 这次改动**，从不把"默认值"写回房间——否则服务器默认就被永久压掉了。
+
 - **`taken` 的形状不变**：`choiceDuplicates` 下它仍然只记录**第一个**持有者，其他人只出现在 `picks` 里——这样已经发布的
   客户端结构不用改，也让"谁先拿的"这个信息保持可读。
 - **新字段要在协议守卫里登记**：视图里给客户端的新字段（例如 `m.public.sp.allowDuplicates`，客户端据此不再把已被选走的卡

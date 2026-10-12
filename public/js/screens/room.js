@@ -17,7 +17,7 @@ import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, MAX_SEATS, MAX_SPECT
 // Room-size policy (docs/MODS.md): the offered sizes and the default come from `data/capacity.json`.
 import { capacityOptions, defaultSeats } from '../../../shared/playerCapacity.js';
 import {
-  html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyTag, DifficultyIcon, Tooltip, confirmDialog, doctorNo,
+  html, Button, Icon, MicroLabel, PingPill, AvatarFrame, DifficultyTag, DifficultyIcon, Tooltip, Modal, confirmDialog, doctorNo,
 } from '../ui/components.js';
 import { toast, toastError } from '../ui/toasts.js';
 import { copyText } from '../ui/clipboard.js';
@@ -29,7 +29,7 @@ import { LoadoutButton } from './loadout.js';
 import { net } from '../net.js';
 import { store, useStore, shallowEqual, emptyMatch, isSpectating } from '../store.js';
 import { contentTagOf } from '../ui/contentPacks.js';
-import { roomContentOk, packRows, codeModRows, roomModsRequest } from '../ui/roomMods.js';
+import { roomContentOk, packRows, codeModRows, roomModsRequest, optionRows, setOptionValue, optionValuesFor } from '../ui/roomMods.js';
 import { difficultyInfo } from './lobby.js';
 import { t, tc } from '../../../shared/i18n.js';
 
@@ -233,24 +233,92 @@ function DifficultyPicker({ room, isHost, busy, onPick }) {
  * mods the server ENABLED it uses. The host toggles; everyone else sees the same facts read-only. A code mod is loaded
  * server-wide — this is the per-room switch the mods ask about (`Match.modEnabled`).
  */
-function RoomModsPicker({ state, entries, isHost, busy, onPick }) {
+/**
+ * The room's own mod panel (docs/PACKS.md §4, docs/MODS.md §4.6) — a DIALOG, opened from the button next to the capacity
+ * picker. The host ticks the content packs, ticks which of the enabled code mods this match runs, and sets each mod's own
+ * declared options (the shared health bar's sum/max and band/lp are the first users); everyone else reads the same dialog.
+ * One 应用 sends a single `room.setMods { mods, codeMods, codeOptions }`.
+ *
+ * The draft lives here until the host applies it, and `codeOptions` always carries the room's existing values as well, since
+ * a request that leaves the field out would clear them.
+ */
+function RoomModsDialog({ open, state, entries, isHost, busy, onClose, onApply }) {
+  const [packs, setPacks] = useState(null);
+  const [code, setCode] = useState(null);
+  const [changed, setChanged] = useState({});
+  // A fresh dialog every time it opens (and whenever the room's own choice changed under it).
+  useEffect(() => {
+    setPacks(null); setCode(null); setChanged({});
+  }, [open, state && state.tag]);
   if (!state) return null;
-  const packs = packRows(state.choosable, entries, state.mods);
-  const code = codeModRows(state.codeChoices, state.codeMods);
-  if (!packs.length && !code.length) return null;
-  const togglePack = (id, on) => onPick(packs.filter((r) => (r.id === id ? !on : r.on)).map((r) => r.id),
-    state.codeMods || []);
-  const toggleCode = (id, on) => onPick(packs.filter((r) => r.on).map((r) => r.id),
-    code.filter((r) => (r.id === id ? !on : r.on)).map((r) => r.id));
-  const row = (r, onToggle) => html`<button key=${r.id} type="button" aria-pressed=${r.on ? 'true' : 'false'}
-    class=${`dpick__opt${r.on ? ' is-active' : ''}`} disabled=${!isHost || !!busy}
-    title=${r.description || r.name} onClick=${() => onToggle(r)}>${r.name}</button>`;
-  return html`<div class="room-modpick" data-testid="room-modpick">
-    ${packs.length ? html`<span class="room-capacity__label">${t('本局内容包')}</span>
-      <div class="dpick" role="group" aria-label=${t('本局内容包')}>${packs.map((r) => row(r, (x) => togglePack(x.id, x.on)))}</div>` : null}
-    ${code.length ? html`<span class="room-capacity__label">${t('本局代码 mod')}</span>
-      <div class="dpick" role="group" aria-label=${t('本局代码 mod')}>${code.map((r) => row(r, (x) => toggleCode(x.id, x.on)))}</div>` : null}
-    ${isHost ? null : html`<span class="t-dim">${t('由房主选择')}</span>`}
+  const chosenPacks = packs ?? (state.choosable || []).filter((id) => (state.mods || []).includes(id));
+  const chosenCode = code ?? (state.codeMods || []);
+  const packRowList = packRows(state.choosable, entries, chosenPacks);
+  const codeRowList = codeModRows(state.codeChoices, chosenCode);
+  if (!packRowList.length && !codeRowList.length) return null;
+  const toggle = (list, id) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  const changeOption = (modId, key, value) => setChanged((prev) => ({ ...prev, [modId]: setOptionValue(prev[modId] || {}, key, value) }));
+  const apply = () => {
+    const options = {};
+    for (const entry of state.codeOptions || []) {
+      if (!chosenCode.includes(entry.id)) continue;
+      const merged = optionValuesFor(entry.values || {}, changed[entry.id] || {});
+      if (Object.keys(merged).length) options[entry.id] = merged;
+    }
+    onApply(roomModsRequest(state.fixed, chosenPacks, chosenCode, options));
+  };
+  const segment = (label, value, options, onPick) => html`<div class="dpick" role="group" aria-label=${label}>
+    ${options.map((o) => html`<button key=${String(o.value)} type="button" aria-pressed=${value === o.value ? 'true' : 'false'}
+      class=${`dpick__opt${value === o.value ? ' is-active' : ''}`} disabled=${!isHost || !!busy}
+      onClick=${() => onPick(o.value)}>${o.label}</button>`)}
+  </div>`;
+  const optionRow = (modId, row) => html`<div class="room-modopt" key=${`${modId}:${row.key}`} data-testid=${`mod-opt-${modId}-${row.key}`}>
+    <span class="room-modopt__label">${row.label}${row.set ? html`<span class="t-dim"> · ${t('已设置')}</span>` : null}</span>
+    ${row.type === 'enum' ? segment(row.label, row.value, (row.values || []).map((v) => ({ value: v, label: String(v) })), (v) => changeOption(modId, row.key, v))
+      : row.type === 'boolean' ? segment(row.label, row.value, [{ value: false, label: t('关') }, { value: true, label: t('开') }], (v) => changeOption(modId, row.key, v))
+      : html`<input type="number" class="room-modopt__num" value=${String(row.value)} disabled=${!isHost || !!busy}
+          min=${row.min ?? undefined} max=${row.max ?? undefined} aria-label=${row.label}
+          onChange=${(e) => changeOption(modId, row.key, Number(e.currentTarget.value))} />`}
+    ${row.description ? html`<span class="t-dim room-modopt__desc">${row.description}</span>` : null}
+  </div>`;
+  return html`<${Modal} open=${open} onClose=${onClose} title=${t('本局附加内容')} micro="ROOM MODS // PACKS & CODE MODS"
+    class="room-moddlg" actions=${html`
+      <${Button} variant="secondary" icon="close" data-testid="room-mods-close" onClick=${onClose}>${t('关闭')}<//>
+      ${isHost ? html`<${Button} variant="primary" icon="check" data-testid="room-mods-apply" disabled=${!!busy} onClick=${apply}>${t('应用')}<//>` : null}`}>
+    <div class="room-modpick" data-testid="room-modpick">
+      ${packRowList.length ? html`<section>
+        <${MicroLabel} tone="mint">${t('本局内容包')}<//>
+        <div class="dpick" role="group" aria-label=${t('本局内容包')}>
+          ${packRowList.map((r) => html`<button key=${r.id} type="button" aria-pressed=${r.on ? 'true' : 'false'}
+            class=${`dpick__opt${r.on ? ' is-active' : ''}`} disabled=${!isHost || !!busy}
+            title=${r.name} onClick=${() => setPacks(toggle(chosenPacks, r.id))}>${r.name}</button>`)}
+        </div>
+      </section>` : null}
+      ${codeRowList.length ? html`<section>
+        <${MicroLabel} tone="mint">${t('本局代码 mod')}<//>
+        <div class="dpick" role="group" aria-label=${t('本局代码 mod')}>
+          ${codeRowList.map((r) => html`<button key=${r.id} type="button" aria-pressed=${r.on ? 'true' : 'false'}
+            class=${`dpick__opt${r.on ? ' is-active' : ''}`} disabled=${!isHost || !!busy}
+            title=${r.description || r.name} onClick=${() => setCode(toggle(chosenCode, r.id))}>${r.name}</button>`)}
+        </div>
+        ${(state.codeOptions || []).filter((entry) => chosenCode.includes(entry.id) && (entry.options || []).length).map((entry) => html`<div class="room-modopts" key=${entry.id}>
+          ${(entry.options || []).map((o) => optionRow(entry.id, optionRows(entry, changed[entry.id] || {}).find((r) => r.key === o.key)))}
+        </div>`)}
+      </section>` : null}
+      ${isHost ? null : html`<p class="t-dim">${t('由房主选择')}</p>`}
+    </div>
+  <//>`;
+}
+
+/** The button that opens the dialog, plus the same facts as one line for everyone who does not open it. */
+function RoomModsButton({ state, busy, onOpen }) {
+  if (!state) return null;
+  const code = (state.codeChoices || []).filter((m) => (state.codeMods || []).includes(m.id));
+  if (!(state.choosable || []).length && !(state.codeChoices || []).length) return null;
+  return html`<div class="room-modbar">
+    <${Button} variant="secondary" size="sm" icon="settings" data-testid="room-mods-open" disabled=${!!busy} onClick=${onOpen}>
+      ${t('本局附加内容')}<//>
+    ${code.length ? html`<span class="t-dim" data-testid="room-mods-code">${t('代码 mod')}: ${code.map((m) => m.name).join('、')}</span>` : null}
   </div>`;
 }
 
@@ -333,11 +401,9 @@ export function RoomScreen() {
   });
   const setDifficulty = (difficulty) => run('diff', () => net.request('room.setDifficulty', { difficulty }));
   const setCapacity = (capacity) => run('capacity', () => net.request('room.setCapacity', { capacity }));
-  /** The host's own mod choice for this room (docs/MODS.md §4.6): packs and code mods travel together. */
-  const setRoomMods = (packsOn, codeOn) => {
-    const state = roomModsState || { fixed: [], choosable: [], mods: [], codeMods: [] };
-    return run('roommods', () => net.request('room.setMods', roomModsRequest(state.fixed, packsOn, codeOn)));
-  };
+  /** The host's own mod choice for this room (docs/MODS.md §4.6): packs, code mods and their options travel together. */
+  const applyRoomMods = (payload) => run('roommods', () => net.request('room.setMods', payload)).then(() => setModsOpen(false));
+  const [modsOpen, setModsOpen] = useState(false);
   // spectator seats: the host frees one; a spectator takes a free player seat with room.join of this room
   const removeSpectator = (playerId) => run(`rs${playerId}`, () => net.request('room.removeSpectator', { playerId }));
   const sit = () => run('sit', () => net.request('room.join', { code: room.code }));
@@ -418,8 +484,9 @@ export function RoomScreen() {
     </header>
 
     ${coop ? html`<${CapacityPicker} room=${room} facts=${facts} busy=${busy} onPick=${setCapacity} />` : null}
-    ${coop ? html`<${RoomModsPicker} state=${roomModsState} entries=${packEntries}
-      isHost=${facts.isHost} busy=${busy} onPick=${setRoomMods} />` : null}
+    ${coop ? html`<${RoomModsButton} state=${roomModsState} busy=${busy} onOpen=${() => setModsOpen(true)} />` : null}
+    ${coop ? html`<${RoomModsDialog} open=${modsOpen} state=${roomModsState} entries=${packEntries}
+      isHost=${facts.isHost} busy=${busy} onClose=${() => setModsOpen(false)} onApply=${applyRoomMods} />` : null}
     ${roomModsLine}
     <main class=${`seats${coop ? facts.seats.length > 10 ? ' seats--dense' : facts.seats.length > 4 ? ' seats--expanded' : '' : ' seats--solo'}${coop && facts.seats.length === 10 ? ' seats--ten' : ''}`}>
       ${facts.seats.map((s, i) => html`<${SeatCard} key=${s ? `p${s.playerId}` : `e${i}`} seat=${s} index=${i} room=${room} facts=${facts}
