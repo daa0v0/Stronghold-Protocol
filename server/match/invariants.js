@@ -61,7 +61,10 @@ export function collectViolations(m, { limit = 25 } = {}) {
     if (!Number.isInteger(ps.funds) || ps.funds < 0) fail(`${id}: funds ${ps.funds}`);
     if (!Number.isInteger(ps.pendingFunds) || ps.pendingFunds < 0) fail(`${id}: pendingFunds ${ps.pendingFunds}`);
     if (!Number.isFinite(ps.lp)) fail(`${id}: lp ${ps.lp}`);
-    if (ps.alive && m.phase !== PHASE.SETTLE && ps.lp <= 0 && m.teamLp == null && m.round > 0 && ps.bandId) fail(`${id}: alive with lp ${ps.lp}`);
+    // A living seat at 0 LP is out — unless the health it holds is a POOL: `m.teamLp` (the shipped Final Assault merge) or
+    // the shared-health-bar rule (`m.sharedLp`, docs/MODS.md, mods/shared-health-bar), where 0 means the whole team is out
+    // and the settle that eliminates them has not run yet.
+    if (ps.alive && m.phase !== PHASE.SETTLE && ps.lp <= 0 && m.teamLp == null && m.sharedLp == null && m.round > 0 && ps.bandId) fail(`${id}: alive with lp ${ps.lp}`);
     if (ps.hand.length !== gd.benchSize) fail(`${id}: hand has ${ps.hand.length} slots`);
     if (ps.temp.length !== gd.tempSize) fail(`${id}: temp has ${ps.temp.length} slots`);
     // 临时整备区 = overflow only (PRTS 卫戍协议/帮助 §手牌区 "常规手牌区出现空位时自动移入", GitHub #82)

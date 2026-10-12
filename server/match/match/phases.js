@@ -329,6 +329,9 @@ export class MatchPhases {
       this.markPrivate(ps);
     }
     void timeout;
+    // Every band is known now, so a shared-health-bar rule can size the team's ONE bar from them (match/lp.js); without the
+    // rule this is a no-op and each seat keeps the LP of its own band.
+    this.initSharedLp();
     this.enterBattleCheck();
   }
 

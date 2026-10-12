@@ -377,9 +377,13 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
     const r = orig();
     runInvariants();
     check('bands', () => {
+      const shared = m.sharedLpSize ? m.sharedLpSize(m.alivePlayers()) : null;
       for (const ps of m.alivePlayers()) {
         if (!ps.bandId || !gd.bandAllowed(ps.bandId)) fail(`${ps.playerId}: band ${ps.bandId} not allowed`);
-        if (ps.lp !== gd.startLp(ps.bandId)) fail(`${ps.playerId}: LP ${ps.lp} != totalHp ${gd.startLp(ps.bandId)} of ${ps.bandId}`);
+        // With a shared-health-bar rule the team holds ONE bar whose size comes from the rule (docs/MODS.md,
+        // mods/shared-health-bar); without it every living seat holds the LP of its own band.
+        if (shared != null) { if (ps.lp !== shared) fail(`${ps.playerId}: LP ${ps.lp} != the team's shared bar ${shared}`); }
+        else if (ps.lp !== gd.startLp(ps.bandId)) fail(`${ps.playerId}: LP ${ps.lp} != totalHp ${gd.startLp(ps.bandId)} of ${ps.bandId}`);
       }
       if (m.draft) {
         checkBandPicks(m.draft);

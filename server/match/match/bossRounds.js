@@ -477,7 +477,11 @@ export class MatchBoss {
       x.n++;
       left--;
     }
-    for (const x of rows) if (x.p.lp !== x.n) { x.p.lp = x.n; x.p.dirty(); }
+    // The hidden core splits the TEAM's health pool across the seats. With the shared-health-bar rule the team holds one
+    // bar, so the same total is spread evenly instead — the team keeps what the round granted and shares it.
+    const teamTotal = rows.reduce((s, x) => s + x.n, 0);
+    const share = this.sharedLp && rows.length ? Math.round(teamTotal / rows.length) : null;
+    for (const x of rows) this.applyLp(x.p, share == null ? x.n : share);
   }
 
   /**

@@ -40,7 +40,9 @@ export class MatchSettle {
       const counted = (r.leaked || []).filter((l) => l && l.counted !== false).length;
       const loss = plan && plan.leakers.includes(ps) ? Math.min(cap, survivors.get(ps.playerId) || 0) : Math.min(cap, counted);
       if (this.uniteResultView) this.uniteResultView.losses[ps.playerId] = loss;
-      ps.lp -= loss;
+      // Health changes go through the one choke point (match/lp.js): with the shipped rules this writes this player, with
+      // the shared-health-bar rule it writes the team's one bar (docs/MODS.md, mods/shared-health-bar).
+      this.loseLp(ps, loss);
       ps.stats.lpLost += loss;
       ps.stats.leaks += counted;
       ps.stats.kills += Number(r.killed) || 0;
@@ -75,7 +77,7 @@ export class MatchSettle {
     }
     for (const ps of alive) {
       if (ps.lp <= 0) {
-        ps.lp = 0;
+        this.applyLp(ps, 0);
         ps.eliminate(this.round);
         this.toast(ps, 'error', '你的目标生命值耗尽，已被淘汰');
         this.tickerText(msg('{name}博士的目标生命值已耗尽', { name: ps.name }), FLOW_TICKER_PRIORITY);

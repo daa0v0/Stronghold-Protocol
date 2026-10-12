@@ -34,7 +34,12 @@ export class MatchRevive {
     if (ps.left) return { ok: false, error: 'LEFT' };
     if (ps.alive) return { ok: false, error: 'ALIVE' };
     const lp = Number.isFinite(opts.lp) ? opts.lp : this.gd.startLp(ps.bandId);
-    ps.revive(lp);
+    if (this.sharedLp) {
+      // One bar for the team: coming back does not change it, and an empty bar means nothing to come back to.
+      const current = this.alivePlayers()[0]?.lp ?? 0;
+      if (current <= 0) return { ok: false, error: 'TEAM_BAR_EMPTY' };
+      ps.revive(current);
+    } else ps.revive(lp);
     // A live leader pool is sized by the alive players (finalAssault.js bossPoolHp): a seat coming back grows it.
     if (this.bossPool && (this.phase === PHASE.FINAL_ASSAULT || this.phase === PHASE.HIDDEN_CORE)) {
       const bossId = this.phase === PHASE.HIDDEN_CORE ? this.hiddenBossId : this.bossId;

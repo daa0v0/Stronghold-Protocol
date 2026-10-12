@@ -176,6 +176,7 @@ export async function setup(ctx) {
 |---|---|---|
 | `mods/dup-strategies/` | **同一机变卡池内多名玩家可选同一张卡**（原版池内唯一）。 | `shared/matchRules.js` 的 `choiceDuplicates` |
 | `mods/revive-teammate/` | 机变里新增一张「**复生协议**」：选择它的人**扣自己 10 点血量，复活一名已被淘汰的队友**（优先最早被淘汰者，按对方方针的 `totalHp` 回来）。卡片随数据包 `packs/revive-teammate/` 下发（见 §4.6）。 | `shared/modContent.js`（注册 `choice:<effectId>`）、`ctx.match`、`Match.revivePlayer()` |
+| `mods/shared-health-bar/` | **全队共用一条血条**：所有人始终持有同一个血量值，大小可配置为队内所选方针 `totalHp` 的**总和**或**最高**（也可按建池时的当前血量取）。 | `shared/matchRules.js` 的 `sharedLp`、健康值收口 `Match.applyLp()` |
 
 启用方式与任何 mod 一样：`/admin → 代码 mod → 启用`（或 `runtime/server-settings.json` 的 `mods.enabled`），然后**重启**。
 不想要了就删掉目录、或在 `config.json` 里关掉它自己的开关。
@@ -192,6 +193,7 @@ export async function setup(ctx) {
 | 规则 | 默认 | 含义 |
 |---|---|---|
 | `choiceDuplicates` | `false` | 同一固定卡池内，多个人能否选同一张机变卡？`false` = 池内唯一（`group.taken` 一名持有者） |
+| `sharedLp` | `null` | 全队共用一条血条？`null` = 每人一条（原版）。否则 `{ mode: 'sum' \| 'max', source: 'band' \| 'lp' }`：血条大小 = 队内所选方针 `totalHp`（`band`）或建池时的当前血量（`lp`）的**总和**或**最高** |
 
 mod 在 `setup(ctx)` 里调用 `setMatchRules({...})`；写错的键会被报告并忽略。
 
@@ -235,6 +237,25 @@ export async function setup(ctx) {
 **加一张新卡需要数据包**：卡片本身是数据（`choices.cards.tactic`），客户端也照它渲染，所以 `mods/revive-teammate` 配了
 `packs/revive-teammate/`。注意 **`cards.tactic` 是数组，而合补丁会整体替换数组**：包必须给出**整张列表**，所以它由
 `tools/revive-pack.mjs` 生成（`--write` 重新生成，`--check` 在游戏新增了战术卡时报错，避免手改漂移）。
+
+**④ 一处健康值收口：`server/match/match/lp.js`**
+
+血量在核心里有五个写入点（方针抽选赋初始值、战斗伤害、隐藏核心的重新分配、淘汰归零、中途退出）。规则若分别落在这些地方
+就会各写各的、迟早漂移，所以全部收口成 `Match.applyLp(ps, value)` / `Match.loseLp(ps, loss)`：**没有规则时只写这一名玩家
+（与原来逐字等价）**，有 `sharedLp` 规则时写全队存活者——这就是"一条血条"的实现。配套：
+
+- `Match.sharedLpSize()` 算出这条血条该多大（按规则取总和或最高），`Match.initSharedLp()` 在**方针抽选结束**时调用，
+  因为大小取决于全队选完的方针；
+- 不变量审计（`audit.js` 的 `bands` 检查）与淘汰判定（`invariants.js` 的"活着就不能 0 血"）都改为**策略感知**：共享规则下
+  一个人 0 血不等于他出局，而是**全队出局**（下一次结算执行淘汰）；
+- 隐藏核心的重新分配在共享规则下把**队伍总量按人数均分**（保持"全队同一个值"），关闭规则时仍是原版的逐座位分配；
+- 共享规则下血条为 0 时无法复活（`Match.revivePlayer` 返回 `TEAM_BAR_EMPTY`）——没有可回去的血量；
+- **别和 `Match.teamLp` 搞混**：那是最终攻势/隐藏核心的合并血池（存活者 LP 之和，仅在首领阶段存在），是另一件事。
+  最初我就是重名撞上了它，构造函数里的 `this.teamLp = null` 直接把 getter 覆盖成了报错——所以本规则叫 `sharedLp`。
+
+> 界面：血量数值本身已经全队一致（每个座位显示同一个数），但**客户端仍按座位画 N 条进度条**。要把它画成"一条"需要下发一个
+> 视图字段并在 `ui/teamPanel.js` / `ui/hud.js` 合并渲染——那是核心改动（协议视图字段要登记，见上面的注意事项），不属于这个
+> mod 的范围。
 
 ## 5. 什么永远做不到（结构性限制）
 

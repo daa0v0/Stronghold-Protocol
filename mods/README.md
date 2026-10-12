@@ -13,6 +13,7 @@ Real, enableable mods live here — read one instead of only a sketch:
 |---|---|
 | `dup-strategies/` | 同一机变卡池内多名玩家可选同一张卡 (`shared/matchRules.js` `choiceDuplicates`) |
 | `revive-teammate/` | 机变里新增「复生协议」：扣自己 10 点血量复活一名队友（卡片随 `packs/revive-teammate/` 下发，效果由本 mod 注册） |
+| `shared-health-bar/` | 全队共用一条血条，大小可配置为队内所选方针总和的 `sum` 或 `max`（`shared/matchRules.js` `sharedLp`） |
 
 Each ships its own `config.json` (an owner can keep the mod installed but off) and its own test under `test/match/`.
 The rules a mod may change are listed in [docs/MODS.md](../docs/MODS.md) §4.6 — an ES module's exports cannot be reassigned

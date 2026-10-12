@@ -1,0 +1,10 @@
+{
+  "id": "shared-health-bar",
+  "name": "全队共享血条",
+  "englishName": "One shared health bar",
+  "version": "1.0.0",
+  "app": ">=0.2.4",
+  "authors": ["Stronghold Protocol"],
+  "description": "全队共用一条血条，而不是每人一条。血条大小可配置为队内所选方针 totalHp 的总和（sum）或最高（max），也可按当前血量取（source: lp）。config.json 可调。",
+  "entry": "main.mjs"
+}
