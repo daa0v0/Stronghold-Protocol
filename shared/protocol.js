@@ -7,6 +7,7 @@ import { diySlotIds, validateDiyPicks } from './diy.js';
 import { cultivatedStats, isPotential, isCultivate, POTENTIAL_DEFAULT, CULTIVATE_DEFAULT } from './potential.js';
 import { isAssetCacheReadiness } from './assetCache.js';
 import { isChatTextInput } from './matchChat.js';
+import { isPackId } from './packs.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -92,6 +93,20 @@ export const SKIN_LIMITS = Object.freeze({ entries: 160, idLen: 64 });
 export const isSkinId = (v) => typeof v === 'string' && v.length > 0 && v.length <= SKIN_LIMITS.idLen && /^[A-Za-z0-9_@#+.\-]+$/.test(v);
 /** Structural check of `room.skins.skins`. */
 export const isSkinSelection = (v) => isMap(v, SKIN_LIMITS.entries, isId, isSkinId);
+
+// ---- content packs per room (docs/PACKS.md §4): room.create { mods? } / room.setMods { mods } / room.mods ---------
+
+/** Limits of the per-room content-pack selection (server/lobby.js). */
+export const MOD_LIMITS = Object.freeze({ entries: 64, idLen: 64 });
+/**
+ * The content packs a match uses, chosen by the host out of the packs the server owner enabled (docs/PACKS.md §4 "The
+ * owner's switches"). Structural only — whether a pack exists, is enabled, or may be turned off per room at all (a `data`
+ * pack cannot: its tables were fixed when the process started) is the server's business, and it answers ERR.MODS with the
+ * reason. Omitted at `room.create` = every pack the owner enabled.
+ */
+export const isModSelection = (v) => Array.isArray(v) && v.length <= MOD_LIMITS.entries
+  && v.every((id) => typeof id === 'string' && id.length > 0 && id.length <= MOD_LIMITS.idLen && isPackId(id))
+  && new Set(v).size === v.length;
 
 // ---- operator loadout (DESIGN §16): room.loadout { entries } -------------------------------------------------
 
@@ -412,7 +427,7 @@ export const C2S = {
   // Admission metadata uses the existing wire-v1 extension slot; published position layouts stay unchanged.
   'lobby.quickMatch': { capacity: (v) => ROOM_CAPACITIES.includes(v), assetCache: isAssetCacheReadiness, $optional: ['capacity', 'assetCache'] },
   'room.create': { mode: (v) => v === 'solo' || v === 'coop', difficulty: (v) => DIFFICULTIES.includes(v), capacity: (v) => ROOM_CAPACITIES.includes(v),
-    assetCache: isAssetCacheReadiness, $optional: ['capacity', 'assetCache'] },
+    assetCache: isAssetCacheReadiness, mods: isModSelection, $optional: ['capacity', 'assetCache', 'mods'] },
   'room.join': { code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v), assetCache: isAssetCacheReadiness, $optional: ['assetCache'] },
   'room.leave': {},
   'room.ready': { ready: isBool },
@@ -443,6 +458,9 @@ export const C2S = {
   // m.public players[]) and unlike room.loadout / room.ownership / room.diy accepted in ANY room phase — a running
   // match takes the change at once (Match.setSkins)
   'room.skins': { skins: isSkinSelection },
+  // 内容包 per match (docs/PACKS.md §4): the host narrows the owner-enabled packs down for this room; data packs (whose
+  // tables were fixed at start) cannot be dropped here, and the server says so with ERR.MODS.
+  'room.setMods': { mods: isModSelection },
   // spectator seats (remake feature, community report #26; MAX_SPECTATORS): take one of a co-op room's spectator seats —
   // in its lobby or while its match runs — never a player seat; the host frees one by playerId (the spectator gets
   // room.closed { reason: 'kicked' }). room.leave / g.leave leave a spectator seat like a player seat.
@@ -515,6 +533,10 @@ export const S2C = [
   'announcement.notice', // explicit server-owner command; publication alone never sends this push
   'lobby.state',
   'room.state', 'room.closed',
+  // room.mods { mods, fixed, tag } — the content packs this match uses (docs/PACKS.md §4), right after room.state and
+  // after every change to it. JSON fallback rather than another room.state field: the v1 position tables are frozen, and a
+  // frame with extra values is rejected (docs/WIRE_PROTOCOL.md).
+  'room.mods',
   'm.public', 'm.private', 'm.field', 'm.toast', 'm.ticker', 'm.emote', 'm.result',
   // Post-v1 JSON fallback; repeated in welcome.emergency and match public freeze extensions.
   'm.emergency',

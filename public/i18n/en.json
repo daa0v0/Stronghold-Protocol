@@ -841,6 +841,7 @@
   "无法写入剪贴板，请手动复制下面的内容": "Couldn't write to the clipboard. Copy the text below by hand.",
   "诊断信息": "Diagnostics",
   "观战中无法进行该操作": "Spectators cannot do that",
+  "本局的内容包组合不可用（数据包无法为单个房间关闭）": "This match's content packs are not available (a data pack cannot be turned off for one room)",
   "标准": "Standard",
   "险境": "Perilous",
   "绝境": "Dire",

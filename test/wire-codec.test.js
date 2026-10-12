@@ -18,13 +18,18 @@ const nameOf = (f) => typeof f === 'string' ? f : f[0];
 // Fields introduced after v1 was published use its existing extension slot. Keep this allowlist
 // explicit: adding a business field must not silently weaken coverage or renumber the fixed catalog.
 const V1_EXTENSIONS = Object.freeze({
-  'room.create': ['assetCache'], 'room.join': ['assetCache'],
+  'room.create': ['assetCache', 'mods'], 'room.join': ['assetCache'],
   'lobby.quickMatch': ['assetCache'], 'room.spectate': ['assetCache'],
 });
 // Published v1 has no new numeric IDs: these post-v1 business types deliberately use its JSON fallback.
 // room.skins (干员皮肤, docs/SKINS.md) is one of them: a post-v1 type, so it keeps the readable JSON frame and never
 // takes a numeric id away from the frozen v1 catalog (shared/wireCodec.js encodeWire falls back for unknown types).
-const V1_JSON_FALLBACK = Object.freeze({ c2s: ['room.chat', 'room.skins'], s2c: ['m.chat', 'm.chatState', 'm.emergency'] });
+// room.setMods / room.mods (内容包 per match, docs/PACKS.md §4) are another pair: the host's selection and the frame the
+// server answers with, which also stays out of `room.state` for the same reason (a v1 frame rejects extra values).
+const V1_JSON_FALLBACK = Object.freeze({
+  c2s: ['room.chat', 'room.skins', 'room.setMods'],
+  s2c: ['m.chat', 'm.chatState', 'm.emergency', 'room.mods'],
+});
 
 test('v1 complete catalog fingerprint prevents accidental published field or enum renumbering', () => {
   const canonical = (v) => Array.isArray(v) ? v.map(canonical) : v && typeof v === 'object'

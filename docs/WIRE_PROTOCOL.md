@@ -152,3 +152,14 @@ node --test test/wire-pressure.test.js
 历史只在服务器 `matchCtx.chat` 和独立浏览器 `chatStore` 的 RAM 中存在，最终结算、失败或销毁按生命周期清空。不进入 `m.public` / `m.private`、周期性房间快照、战斗结果、回放、诊断、战绩或磁盘文件；正常消息不会触发额外历史请求。查看面板不请求服务器记录。
 
 维护定向测试：`test/match-chat.test.js`、`test/match-chat-ws.test.js`、`test/ui/match-chat-model.test.js` 以及 `test/wire-codec.test.js`。容量准备和聊天的完整依据见 [DEV-20261011-04](development/records/2026-10-11-04-ready-and-match-chat.md)。
+
+## 9. 每局内容包的两个消息
+
+内容包（[PACKS.md](PACKS.md) §4）的每局选择同样使用既有 v1 未知类型 JSON 回退，不新增或重排消息 ID、字段位置与枚举，v1 指纹保持原值。`room.create` 的 `mods` 走该消息原有的扩展位（与 `assetCache` 同一位），因此紧凑帧照常携带。
+
+| 类型 | 方向 | 内容与用途 |
+|---|---|---|
+| `room.setMods` | C2S | `{mods}`，房主在房间大厅里收窄本局启用的内容包；`room.create` 也可带 `mods`。非房主、已开局、未知/被服主停用的包、以及**非实时类型**（`data`：其数据表在进程启动时已固定）被移除时，回答 `ERR.MODS` |
+| `room.mods` | S2C | `{code, mods, fixed, tag}`，紧跟 `room.state` 发送（初始与每次变更后）。`mods` 是本局启用的包 ID，`fixed` 是本局无法移除的包，`tag` 是本局自己的内容标识（`shared/contentTag.js`），供客户端与它按索引算出的值比对 |
+
+`room.mods` 不并入 `room.state`：v1 位置表已冻结，多出字段的帧会按格式错误拒绝，因此新增状态用回退类型承载。变更 `mods` 会让房主以外的真人重新变为未就绪（与修改难度同样对待）。语义、服主开关与内容标识的完整说明见 [PACKS.md](PACKS.md) §4；定向测试 `test/packs-room.test.js`、`test/wire-codec.test.js`。

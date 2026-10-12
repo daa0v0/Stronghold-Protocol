@@ -1559,7 +1559,8 @@ describe('match result replay', () => {
       const res = await back.waitFor('m.result');
       if (unicast) assert.equal(res.playerId, guest.id, 'the player gets their own result');
       else assert.equal(res.reason, hostResult.reason);
-      assert.deepEqual(order(back), ['room.state', `m.public:${PHASE.RESULT}`, 'm.result']);
+      // room.mods follows room.state (docs/PACKS.md §4): the content packs this room runs and its own content tag.
+      assert.deepEqual(order(back), ['room.state', 'room.mods', `m.public:${PHASE.RESULT}`, 'm.result']);
       assert.equal(back.log.find((m) => m.t === 'room.state').inMatch, false);
     });
   }

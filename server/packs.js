@@ -372,6 +372,20 @@ export function createPackRegistry(dirs, { log = { info: noop, warn: noop }, app
       };
     },
     /**
+     * The content tag of a SUBSET of the packs in force — a room's own selection (docs/PACKS.md §4). The whole-set tag
+     * is `content().tag`; this is what a room reports so its players can tell whether they run the same content as the
+     * match they joined, rather than as the server in general.
+     * @param {string[]} ids
+     */
+    tagOf(ids) {
+      const wanted = new Set(ids || []);
+      const chosen = refresh().packs
+        .filter((p) => p.supported && isIdentityPack(p.manifest) && wanted.has(p.id))
+        .map((p) => ({ type: p.type, id: p.id, version: p.manifest.version || '', bytes: p.bytes }))
+        .sort((a, b) => (a.type === b.type ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.type < b.type ? -1 : 1));
+      return { tag: contentTag(APP_VERSION, chosen), packs: chosen.map(({ bytes, ...rest }) => rest) };
+    },
+    /**
      * The content identity of this server (shared/contentTag.js): the packs in force and one short tag over them. What
      * GET /healthz reports as `mods`, and what a client compares with the tag it computes from the index it loaded.
      */

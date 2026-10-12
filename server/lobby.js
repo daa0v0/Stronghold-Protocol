@@ -101,6 +101,7 @@
 
 import { randomBytes, randomInt } from 'node:crypto';
 import { ERR, PHASE, DEFAULT_SEATS, ROOM_CAPACITIES, MAX_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor } from '../shared/constants.js';
+import { PACK_TYPES } from '../shared/packs.js';
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks } from '../shared/protocol.js';
 import { encode, prepareMessage, sendPrepared, isDroppable, isErrCode, sendRaw, sendSession } from './net.js';
 import { getData as defaultGetData, lookup } from './data.js';
@@ -221,6 +222,13 @@ export class Room {
     /** @type {{ live: boolean, ended: boolean, disposed: boolean, match: any, chat: MatchChat } | null} */
     this.matchCtx = null;
     this.matchCount = 0;
+    /**
+     * The content packs this room runs (docs/PACKS.md §4), out of the ones the server owner enabled. Set when the host
+     * creates the room (everything enabled by default) and changeable by the host while the room is in its lobby. A pack
+     * of a type that is not live (data: its tables were fixed when the process started) is always in it.
+     * @type {string[]}
+     */
+    this.mods = [];
     /** @type {any} summary passed to onEnd by the last match */
     this.lastSummary = null;
     /**
@@ -287,7 +295,7 @@ export class Lobby {
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {} }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {}, packs = null }) {
     this.registry = registry;
     this.log = log;
     this.MatchClass = MatchClass;
@@ -295,6 +303,12 @@ export class Lobby {
     this.now = now;
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
     this.opts = { ...LOBBY_DEFAULTS, ...options };
+    /**
+     * The content-pack registry (server/packs.js), or null in a bare test lobby: it answers which packs this server runs
+     * and computes a room's own content tag (docs/PACKS.md §4).
+     * @type {{ content: () => { packs: any[] }, tagOf: (ids: string[]) => { tag: string } } | null}
+     */
+    this.packs = packs;
     /** @type {number | null} Owner-controlled AI ceiling, independent from the distributed bundle defaults. */
     this.maxAiPerRoom = null;
     this.requireAssetCache = false;
@@ -450,6 +464,7 @@ export class Lobby {
       case 'room.cancelReroll': return this.rerollSetup(session, msg, true);
       case 'room.loadout': return this.loadout(session, msg);
     case 'room.skins': return this.skins(session, msg);
+      case 'room.setMods': return this.setMods(session, msg);
       case 'room.ownership': return this.ownership(session, msg);
       case 'room.diy': return this.diy(session, msg);
       case 'room.spectate': return this.spectate(session, msg);
@@ -507,9 +522,47 @@ export class Lobby {
   // room.* handlers
   // ---------------------------------------------------------------------------------------------------
 
-  create(session, { mode, difficulty, capacity = DEFAULT_SEATS, assetCache }) {
+  /** The content-pack helpers (docs/PACKS.md §4): what this server runs, what a room may drop, and a room's own tag. */
+
+  /** The identity packs the owner's policy lets this server load (no registry → none, as in a bare test lobby). */
+  enabledMods() { return this.packs ? this.packs.content().packs : []; }
+
+  /** Ids a room cannot drop: a type that is not live (data) had its tables fixed when the process started. */
+  fixedMods() { return this.enabledMods().filter((p) => PACK_TYPES[p.type]?.live === false).map((p) => p.id); }
+
+  /**
+   * Check a room's requested selection. `undefined`/`null` (the message left `mods` out) means "everything enabled".
+   * @param {unknown} mods
+   * @returns {{ ok: true, ids: string[] } | { error: string, detail?: string }}
+   */
+  checkMods(mods) {
+    const ids = [...new Set(this.enabledMods().map((p) => p.id))];
+    if (mods === undefined || mods === null) return { ok: true, ids };
+    if (!Array.isArray(mods)) return fail(ERR.BAD_MSG, 'mods must be a list of pack ids');
+    const known = new Set(ids);
+    for (const id of mods) if (!known.has(id)) return fail(ERR.MODS, `${String(id).slice(0, 64)} is not a content pack this server runs`);
+    for (const id of this.fixedMods()) {
+      if (!mods.includes(id)) return fail(ERR.MODS, `${id} cannot be turned off for one room: its tables were fixed when the server started`);
+    }
+    // Keep the canonical order (the registry's), not the order the client listed them in.
+    return { ok: true, ids: ids.filter((id) => mods.includes(id)) };
+  }
+
+  /**
+   * `room.mods` (docs/PACKS.md §4): the packs this match uses, which of them a room cannot drop, and the room's own
+   * content tag — so a player can tell whether the page they loaded still matches the match they are in.
+   */
+  modsFrame(room) {
+    const tag = this.packs ? this.packs.tagOf(room.mods).tag : '';
+    // `code` too: a client may hold frames for a room it has already left, and the frame must say which room it is about.
+    return { t: 'room.mods', code: room.code, mods: room.mods.slice(), fixed: this.fixedMods(), tag };
+  }
+
+  create(session, { mode, difficulty, capacity = DEFAULT_SEATS, assetCache, mods }) {
     if (this.emergency.active) return fail(ERR.SERVER_EMERGENCY);
     if (!ROOM_CAPACITIES.includes(capacity)) return fail(ERR.BAD_MSG, 'invalid capacity');
+    const modsCheck = this.checkMods(mods);
+    if (!modsCheck.ok) return modsCheck;
     const cur = this.roomOf(session);
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
     const admission = this.assetCacheAdmission(assetCache);
@@ -530,6 +583,7 @@ export class Lobby {
     const room = new Room(code, mode, difficulty, this.now(), capacity);
     room.maxAiPerRoom = this.maxAiPerRoom;
     room.ownerKey = key;
+    room.mods = modsCheck.ids;
     room.seats[0] = this.humanSeat(0, session);
     room.hostId = session.playerId;
     this.rooms.set(code, room);
@@ -537,7 +591,7 @@ export class Lobby {
     this.discovery.forget(session.playerId);
     session.notice = null;
     session.pendingResult = null;
-    this.log.info(`[lobby] ${code} created (${mode}/${difficulty}) by ${session.name}`);
+    this.log.info(`[lobby] ${code} created (${mode}/${difficulty}${room.mods.length ? `, mods ${room.mods.join('+')}` : ', no packs'}) by ${session.name}`);
     this.broadcastState(room);
     return OK;
   }
@@ -656,6 +710,27 @@ export class Lobby {
     else room.seats.length = capacity;
     room.capacity = capacity;
     this.broadcastState(room);
+    return OK;
+  }
+
+  /**
+   * Host-only: narrow this room's content packs down (docs/PACKS.md §4). Changing what a match runs is as significant as
+   * its difficulty, so the other humans are un-readied and have to look again.
+   */
+  setMods(session, { mods }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.match) return fail(ERR.ROOM_STARTED);
+    const check = this.checkMods(mods);
+    if (!check.ok) return check;
+    if (check.ids.join('|') !== room.mods.join('|')) {
+      this.dropReplay(room, session.playerId);
+      room.mods = check.ids;
+      for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+      this.log.info(`[lobby] ${room.code} mods → ${room.mods.join('+') || 'none'}`);
+      this.broadcastState(room);
+    }
     return OK;
   }
 
@@ -1379,11 +1454,15 @@ export class Lobby {
     if (room.disposed) return;
     this.discovery.changed();
     const frame = prepareMessage(room.toState());
-    for (const session of this.memberSessions(room)) sendPrepared(session.ws, frame);
+    // room.mods follows room.state (docs/PACKS.md §4): a JSON-fallback frame rather than a room.state field, because the
+    // v1 position tables are frozen and a frame with extra values is rejected as malformed.
+    const mods = prepareMessage(this.modsFrame(room));
+    for (const session of this.memberSessions(room)) { sendPrepared(session.ws, frame); sendPrepared(session.ws, mods); }
   }
 
   sendState(room, session) {
     sendSession(session, room.toState());
+    sendSession(session, this.modsFrame(room));
   }
 
   /** Match broadcast: encode once, send to every connected member. @returns {string | null} the encoded frame */

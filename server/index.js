@@ -105,7 +105,7 @@ export async function startServer(opts = {}) {
   const dataPacks = applyDataPacks(baseData, packs.list('data'), { log, known: DATA_FILES });
   const data = dataPacks.tables;
   const dataPackTagValue = dataPackTag(dataPacks, (t) => createHash('sha256').update(t).digest('hex'));
-  const { registry, lobby, network } = createSessionStack(opts, { data, log });
+  const { registry, lobby, network } = createSessionStack(opts, { data, log, packs });
   const announcements = createAnnouncementStore({ dir: opts.announcementsDir, root: ROOT, log });
   const announcementNotices = createAnnouncementNoticeMonitor({ store: announcements, network, log });
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, packsDir, packs,

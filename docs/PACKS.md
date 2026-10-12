@@ -251,6 +251,34 @@ writes (`runtime/server-settings.json`), as `packs: { off: [], allow: [] }`:
 
 
 
+### Per-room selection (what a match runs)
+
+The owner decides what the server *may* load ("The owner's switches" above); the **host** of a room decides what a given
+**match** uses, out of those. `room.create` takes `mods` (a list of pack ids, omitted = everything the owner enabled) and
+`room.setMods` changes it later; both accept only packs that change the game, and the room tells every client with
+
+```
+room.mods { code, mods, fixed, tag }
+```
+
+sent right after `room.state` (and after every change to it). `mods` is what this match runs, `fixed` is what it cannot
+drop, and `tag` is the **room's own** content tag — the tag of its subset, not the server's — so a player can tell whether
+the page they loaded still matches the match they are in.
+
+| Rule | Why |
+|---|---|
+| A pack of a type that is **not live** (`data`: its tables were fixed when the process started) cannot be dropped, and the server answers `ERR.MODS` with the reason | a room cannot re-patch the tables the simulation runs on; the answer says so instead of silently ignoring it |
+| An id the owner disabled (or that is not a pack) is refused the same way | a room can only narrow what the server runs, never widen it |
+| Host only, in the room's lobby (not during a match) | the same rule as difficulty and capacity |
+| Changing the selection un-readies the other humans | a different rule set is as significant as a different difficulty |
+| The frame is a post-v1 JSON-fallback type, not a `room.state` field | the v1 position tables are frozen and a frame with an extra value is rejected (`docs/WIRE_PROTOCOL.md` §9) |
+
+What a selection **does** depends on the type, which is why the frame says what is fixed: an `assets` pack changes how the
+match looks (a client-side replacement the client applies for the room's set), while a `data` pack is part of the tables the
+server already simulates with — exactly why it cannot be switched per room.
+
+### Code and gameplay mods (the owner's decision, 2026-10-12)
+
 The study below kept third-party code out of packs. The owner has since decided that this project ships as an open
 source fan remake whose players may write code mods, so:
 
