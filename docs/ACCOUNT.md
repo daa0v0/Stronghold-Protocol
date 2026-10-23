@@ -16,6 +16,13 @@ restart ends running games; accounts and skins remain on disk.
 Skin choices are loaded from the account on sign-in and in every authenticated WebSocket welcome, then saved whenever the client syncs a change. Other browser
 preferences and operator loadouts remain local to each browser. This feature does not upload or synchronize game art.
 
+The title screen offers a 记住密码 ("remember password") checkbox. When it is checked, a successful sign-in stores the
+username and password in that browser's `localStorage` (`sp.rememberAuth`) and prefills both fields the next time the
+title screen opens, so the player only has to press 登录. The password is base64-obfuscated, **not encrypted** — anyone
+with access to that browser's storage can recover it — so it should only be enabled on a private device. Unchecking the
+box (or signing in with it unchecked) clears the stored credentials. This is purely a client-side convenience and does
+not change the server's account store, tokens or the WebSocket `hello` flow.
+
 The login endpoints are `POST /api/account/register` and `POST /api/account/login`, each accepting JSON
 `{ "username": "…", "password": "…" }`. Responses include an account token, username and skin-selection map. Failed
 attempts are limited per network address.

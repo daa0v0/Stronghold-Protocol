@@ -233,6 +233,9 @@
 .title-auth-toggle { border: 0; padding: .04rem; color: var(--mint-300); background: transparent; font: inherit; font-size: calc(.14 * var(--t)); cursor: pointer; }
 .title-auth-toggle:hover { color: var(--text-hi); text-decoration: underline; }
 .title-auth-error { color: var(--red-300, #ff8e83); font-size: calc(.14 * var(--t)); line-height: 1.35; text-align: center; }
+.title-remember { display: flex; align-items: center; gap: .08rem; font-size: calc(.14 * var(--t)); color: var(--text-lo); cursor: pointer; user-select: none; }
+.title-remember:hover { color: var(--text-hi); }
+.title-remember input[type="checkbox"] { width: .18rem; height: .18rem; margin: 0; accent-color: var(--mint-500); cursor: pointer; }
 .title-invite {
   display: flex;
   align-items: center;

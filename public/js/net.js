@@ -739,6 +739,7 @@ const K_WELCOME = 'sp.tokenWelcome'; // sessionStorage: { hash, at } from the fi
 const K_RECENT = 'sp.tokens';    // localStorage: this browser's recent tokens, most recent first
 const K_MATCHES = 'sp.matches'; // local metadata for explicit recovery of another closed tab's seat
 const K_ENTERED = 'sp.entered';  // sessionStorage: this tab passed the title screen
+const K_REMEMBER = 'sp.rememberAuth'; // localStorage: 记住密码 autofill { u, p }; p is base64 obfuscation, NOT encryption
 const RECENT_MAX = 4;
 const TOKEN_MAX_LEN = 64;        // protocol limit for hello.token
 const CHANNEL_NAME = 'sp.identity';
@@ -763,6 +764,16 @@ function sset(s, k, v) { try { if (s) s.setItem(k, v); } catch { /* quota / priv
 function sdel(s, k) { try { if (s) s.removeItem(k); } catch { /* ignore */ } }
 
 const isToken = (t) => typeof t === 'string' && t.length > 0 && t.length <= TOKEN_MAX_LEN;
+
+// 记住密码 keeps the password in localStorage so the title form can prefill it next time. base64 is
+// obfuscation only (it keeps the plaintext out of casual view); it is NOT encryption — anyone with
+// access to this browser's localStorage can recover it, so it should only be enabled on a private device.
+function encodeSecret(str) {
+  try { return globalThis.btoa(String.fromCharCode(...new TextEncoder().encode(String(str)))); } catch { return null; }
+}
+function decodeSecret(b64) {
+  try { return new TextDecoder().decode(Uint8Array.from(globalThis.atob(String(b64)), (c) => c.charCodeAt(0))); } catch { return null; }
+}
 
 /**
  * Short, stable hash of a token (FNV-1a, hex) so tabs never broadcast tokens in clear.
@@ -977,6 +988,25 @@ export function createIdentity(deps = {}) {
     saveName: (name) => sset(local, K_NAME, String(name)),
     getAccountToken: () => sget(local, K_ACCOUNT),
     setAccountToken: (token) => token ? sset(local, K_ACCOUNT, String(token)) : sdel(local, K_ACCOUNT),
+    /** 记住密码 autofill: the locally stored { username, password }, or null. Password is obfuscated, not encrypted. */
+    loadRemembered() {
+      try {
+        const raw = JSON.parse(sget(local, K_REMEMBER) || 'null');
+        if (!raw || typeof raw !== 'object') return null;
+        const username = typeof raw.u === 'string' ? raw.u : '';
+        const password = typeof raw.p === 'string' ? decodeSecret(raw.p) : null;
+        return username && password ? { username, password } : null;
+      } catch { return null; }
+    },
+    /** @param {string} username @param {string} password */
+    saveRemembered(username, password) {
+      if (!username || !password) return;
+      const enc = encodeSecret(password);
+      if (enc == null) return;
+      sset(local, K_REMEMBER, JSON.stringify({ u: String(username), p: enc }));
+    },
+    /** Forget the stored 记住密码 credentials (unchecking the box, or a login the user chose not to remember). */
+    clearRemembered() { sdel(local, K_REMEMBER); },
     /** Token for `hello` (null ⇒ new session). Before init() only this tab's own token is used. */
     getToken() {
       if (current) return current;

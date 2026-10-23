@@ -196,8 +196,10 @@ export function TitleScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
   useLang(); // re-render on a language switch
-  const [name, setName] = useState(() => store.get().me.name || identity.loadName() || '');
-  const [password, setPassword] = useState('');
+  const remembered = useMemo(() => identity.loadRemembered(), []);
+  const [name, setName] = useState(() => store.get().me.name || remembered?.username || identity.loadName() || '');
+  const [password, setPassword] = useState(() => remembered?.password || '');
+  const [remember, setRemember] = useState(() => !!remembered);
   const [registering, setRegistering] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -235,6 +237,8 @@ export function TitleScreen() {
       }
       identity.setAccountToken(result.token);
       setSkins(result.skins || {});
+      if (remember) identity.saveRemembered(result.username, password);
+      else identity.clearRemembered();
       setPassword('');
       enterSession(result.username, { reconnect: true });
     } catch {
@@ -303,6 +307,11 @@ export function TitleScreen() {
         <${TextField} label=${t('密码')} micro="PASSWORD" size="lg" icon="key" value=${password} maxLength=${128} type="password"
           placeholder=${registering ? t('至少 8 位') : t('输入密码')} onInput=${setPassword} onEnter=${start}
           name="password" autoComplete=${registering ? 'new-password' : 'current-password'} />
+        <label class="title-remember">
+          <input type="checkbox" checked=${remember}
+            onChange=${(e) => { const on = e.currentTarget.checked; setRemember(on); if (!on) identity.clearRemembered(); }} />
+          <span>${t('记住密码')}</span>
+        </label>
         ${authError ? html`<div class="title-auth-error" role="alert">${authError}</div>` : null}
         <${Button} variant="primary" size="xl" block=${true} iconRight="chevrons" disabled=${!valid || authBusy} loading=${authBusy} onClick=${start}>${registering ? t('注册并登录') : t('登录')}<//>
         <button type="button" class="title-auth-toggle" onClick=${() => { setRegistering(!registering); setAuthError(''); }}>
