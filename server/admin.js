@@ -5,16 +5,21 @@
 //     characters. There is no default password: a forgotten environment variable must fail closed, never open a public
 //     console with a guessable secret (the fork this feature came from shipped `stronghold-admin-2026` as a fallback).
 //   * Authenticating with `Authorization: Bearer <secret>` compares in constant time. The browser logs in once at
-//     POST /api/admin/login and then carries a per-process random cookie token, so the secret itself never lands in a
-//     cookie, a log line or the browser history.
+//     POST /api/admin/login and then carries a per-session cookie token, so the secret itself never lands in a cookie,
+//     a log line or the browser history.
+//   * Several operators can share the console WITHOUT sharing the secret: ADMIN_ACCOUNTS (server/adminAccounts.js)
+//     holds named accounts, each with its own password, and every session remembers WHICH identity is logged in. The
+//     announcement catalog records that identity in `author`, so a player sees which operator published a notice. The
+//     owner (the ADMIN_SECRET holder) manages the accounts; an account can use the console but not the account list.
 //   * Every route is answered BEFORE the bandwidth-emergency gate (server/http/routes.js), because an operator needs the
 //     console exactly when the server is protecting itself.
 //   * Read-only where the repository already decided: serverSettings.js states that per-server settings have no HTTP
 //     administration endpoint — the panel DISPLAYS them and the CLI (tools/server-settings.mjs) writes them.
-//   * Announcements are the one writable document store: publish / pin / unpin / notify go through the SAME
-//     AnnouncementStore the CLI (tools/announcements.mjs) uses, so the index stays hash-verified and a publication stays
-//     immutable. Notice delivery reuses enqueueAnnouncementNotice (the on-disk spool the running server polls) rather
-//     than a second send path, which is why a notice reaches players within ~1s without any restart.
+//   * Announcements are the one writable document store: publish / update / pin / unpin / notify go through the SAME
+//     AnnouncementStore the CLI (tools/announcements.mjs) uses, so the index stays hash-verified. Delivery reuses
+//     enqueueAnnouncementNotice (the on-disk spool the running server polls) rather than a second send path, which is
+//     why a notice reaches players within ~1s without any restart. (The OneBot 群招募 config is the second one —
+//     runtime/onebot.json via the shared store —, kept here because it changes at runtime from the console too.)
 //
 // i18n-ignore-file: operator-facing administration API and logs, never player-facing UI text
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -40,6 +45,10 @@ export const ADMIN_LOGIN_MAX_FAILURES = 8;
 export const ADMIN_LOGIN_WINDOW_MS = 5 * 60 * 1000;
 export const ADMIN_BROADCAST_TEXT_MAX = 300;
 export const ADMIN_BODY_MAX_BYTES = 8 * 1024;
+/** The identity of the ADMIN_SECRET holder: the owner who bootstraps and manages the operator accounts. */
+export const ADMIN_OWNER_ID = 'owner';
+/** How many console sessions this process remembers (the oldest is dropped first). */
+export const ADMIN_SESSION_MAX = 64;
 /**
  * The body cap for the announcement endpoints only: a notice is a Markdown document, not a toast. The generic cap stays
  * 8 KB so no other write endpoint can be used as a write amplifier; this one is bounded by the store's own
@@ -131,17 +140,14 @@ export function withLogRing(log, ring) {
   return out;
 }
 
-/** The cookie value used while this process runs; never the secret itself. */
-const newSessionToken = () => randomBytes(24).toString('hex');
-
 /**
- * The operator console service. Read-only except for three deliberate actions: a message to every connected player, the
- * maintenance switch (the server's own bandwidth-emergency gate, reused so clients already render it), and closing one
- * room.
+ * The operator console service. Read-only except for the deliberate writes: a message to every connected player, the
+ * maintenance switch (the server's own bandwidth-emergency gate, reused so clients already render it), closing one
+ * room, the announcement catalog, and (owner only) the operator accounts.
  * @param {{
  *   enabled: boolean, problem?: string, secretSource?: 'env'|'file'|null, secret: string|null,
  *   lobby: any, network: any, registry: any, bandwidthEmergency?: any, assetCache?: any,
- *   serverSettings?: any, announcements?: any, ring: ReturnType<typeof createLogRing>,
+ *   serverSettings?: any, announcements?: any, accounts?: any, adminAccounts?: any, onebot?: any, ring: ReturnType<typeof createLogRing>,
  *   log?: { info?: Function, warn?: Function, error?: Function, debug?: Function },
  *   startedAt?: number, now?: () => number, build?: () => string,
  * }} deps
@@ -150,10 +156,14 @@ export function createAdminService(deps) {
   const {
     enabled, problem = '', secretSource = null, secret = null,
     lobby, network, registry, bandwidthEmergency = null, assetCache = null,
-    serverSettings = null, announcements = null, accounts = null,
+    serverSettings = null, announcements = null, accounts = null, adminAccounts = null, onebot = null,
     ring, log = console, startedAt = Date.now(), now = Date.now, build = () => '',
   } = deps;
-  const sessionToken = enabled ? newSessionToken() : '';
+  /** @type {Map<string, { kind: 'owner'|'account', id: string, name: string, at: number }>} */
+  const sessions = new Map();
+  /** The tokens of one operator account, so a password reset / ban / delete ends that operator's sessions at once. */
+  /** @type {Map<string, Set<string>>} */
+  const accountSessions = new Map();
   /** @type {Map<string, { count: number, until: number }>} */
   const failures = new Map();
 
@@ -180,25 +190,11 @@ export function createAdminService(deps) {
     return `HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${secure ? '; Secure' : ''}`;
   }
 
-  /**
-   * Whether this request carries a valid credential: the per-process cookie token, or the raw secret as a bearer token
-   * (scripts and `curl`).
-   * @param {any} req
-   */
-  function authenticate(req) {
-    if (!enabled) return false;
-    const auth = String(req?.headers?.authorization || '');
-    if (auth.startsWith('Bearer ')) return secretEquals(auth.slice(7).trim(), secret);
-    const token = cookies(req)[ADMIN_COOKIE];
-    return !!token && secretEquals(token, sessionToken);
-  }
+  const ownerIdentity = () => ({ kind: 'owner', id: ADMIN_OWNER_ID, name: '主密钥' });
+  const newSessionToken = () => randomBytes(24).toString('hex');
 
-  /**
-   * Throttled login. Returns the `Set-Cookie` value on success.
-   * @param {any} req @param {unknown} candidate
-   * @returns {{ ok: true, cookie: string } | { ok: false, status: number, error: string, retryAfterMs?: number }}
-   */
-  function login(req, candidate) {
+  /** One login attempt against the shared throttle; `check` decides success and the identity it grants. */
+  async function attemptLogin(req, check, error = 'BAD_CREDENTIALS') {
     const key = clientKey(req);
     const time = now();
     const state = failures.get(key);
@@ -206,20 +202,72 @@ export function createAdminService(deps) {
       return { ok: false, status: 429, error: 'TOO_MANY_ATTEMPTS', retryAfterMs: state.until - time };
     }
     if (state && time >= state.until) failures.delete(key);
-    if (!secretEquals(String(candidate ?? ''), secret)) {
+    const identity = await check();
+    if (!identity) {
       const next = failures.get(key) || { count: 0, until: 0 };
       next.count++;
       next.until = time + ADMIN_LOGIN_WINDOW_MS;
       failures.set(key, next);
       log.warn?.(`[admin] 登录失败 source=${key} (${next.count}/${ADMIN_LOGIN_MAX_FAILURES})`);
-      return { ok: false, status: 401, error: 'BAD_SECRET' };
+      return { ok: false, status: 401, error };
     }
     failures.delete(key);
-    log.info?.(`[admin] 登录成功 source=${key}`);
-    return { ok: true, cookie: `${ADMIN_COOKIE}=${sessionToken}; ${cookieFlags(req)}` };
+    const token = newSessionToken();
+    sessions.set(token, { ...identity, at: time });
+    if (identity.kind === 'account') {
+      const set = accountSessions.get(identity.id) || new Set();
+      set.add(token);
+      accountSessions.set(identity.id, set);
+    }
+    while (sessions.size > ADMIN_SESSION_MAX) {
+      const oldest = sessions.keys().next().value;
+      sessions.delete(oldest);
+      for (const set of accountSessions.values()) set.delete(oldest);
+    }
+    log.info?.(`[admin] 登录成功 ${identity.kind === 'owner' ? '主密钥' : `账号 ${identity.id}`} source=${key}`);
+    return { ok: true, identity, cookie: `${ADMIN_COOKIE}=${token}; ${cookieFlags(req)}` };
+  }
+
+  /** Login with the shared secret: the owner identity (the operator who manages the accounts). */
+  function login(req, candidate) {
+    return attemptLogin(req, () => (enabled && secretEquals(String(candidate ?? ''), secret) ? ownerIdentity() : null), 'BAD_SECRET');
+  }
+
+  /** Login with a named operator account (server/adminAccounts.js). */
+  async function loginAccount(req, id, password) {
+    if (!enabled) return { ok: false, status: 401, error: 'UNAVAILABLE' };
+    if (!adminAccountsAvailable()) return { ok: false, status: 503, error: 'UNAVAILABLE' };
+    return attemptLogin(req, async () => {
+      const found = await adminAccounts.authenticate(id, password);
+      return found ? { kind: 'account', id: found.id, name: found.name } : null;
+    });
   }
 
   const loggedOut = (req) => `${ADMIN_COOKIE}=; ${cookieFlags(req)}; Max-Age=0`;
+
+  /** End every session of one operator account (a password reset, a ban or a deletion). */
+  function dropAccountSessions(id) {
+    const set = accountSessions.get(id);
+    if (!set) return;
+    for (const token of set) sessions.delete(token);
+    accountSessions.delete(id);
+  }
+
+  /**
+   * Who this request is: the owner (Bearer secret or an owner cookie) or a named operator account, or null.
+   * @param {any} req
+   * @returns {{ kind: 'owner'|'account', id: string, name: string }|null}
+   */
+  function identity(req) {
+    if (!enabled) return null;
+    const auth = String(req?.headers?.authorization || '');
+    if (auth.startsWith('Bearer ')) return secretEquals(auth.slice(7).trim(), secret) ? ownerIdentity() : null;
+    const session = sessions.get(cookies(req)[ADMIN_COOKIE] || '');
+    return session ? { kind: session.kind, id: session.id, name: session.name } : null;
+  }
+
+  /** Back-compat boolean: every authenticated request also carries an identity (identity() returns it). */
+  function authenticate(req) { return !!identity(req); }
 
   /** A room as the console shows it: the public room state plus the running match's phase, round and fixed groups. */
   function roomView(room) {
@@ -387,11 +435,63 @@ export function createAdminService(deps) {
     return result;
   }
 
+  // ---- operator accounts (the 运维后台's own multi-operator accounts, docs/ADMIN.md) ---------------------
+  //
+  // Only the owner (the ADMIN_SECRET holder) manages these: creating an account is handing out console access, so it
+  // stays a deliberate act by the operator who configured the server. The console itself works with any account.
+
+  const adminAccountsAvailable = () => !!adminAccounts && typeof adminAccounts.authenticate === 'function';
+
+  /** Whether this identity may manage the operator accounts (the owner only). */
+  const isOwner = (identity) => !!identity && identity.kind === 'owner';
+
+  /** The operator accounts: id, name, timestamps, disabled. Never a hash, a salt or a token. */
+  async function listOperators() {
+    if (!adminAccountsAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const result = await adminAccounts.list();
+    return { ok: true, ...result, at: now() };
+  }
+
+  /** Create one operator account. The id is also the label players see under a published announcement. */
+  async function createOperator({ id, password, name }) {
+    if (!adminAccountsAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const result = await adminAccounts.create({ id, password, name: name === '' ? undefined : name });
+    if (result.ok) log.info?.(`[admin] 创建运维账号 ${result.account.id}`);
+    return result;
+  }
+
+  /** Set a new password for one operator account; its sessions end, so it logs in again. */
+  async function setOperatorPassword(id, password) {
+    if (!adminAccountsAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const result = await adminAccounts.setPassword(id, password);
+    if (result.ok) { dropAccountSessions(result.account.id); log.info?.(`[admin] 重置了运维账号 ${result.account.id} 的密码`); }
+    return result;
+  }
+
+  /** Disable (or re-enable) one operator account; disabling also ends its sessions. */
+  async function setOperatorDisabled(id, disabled) {
+    if (!adminAccountsAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const result = await adminAccounts.setDisabled(id, disabled);
+    if (result.ok && disabled) dropAccountSessions(result.account.id);
+    if (result.ok) log.info?.(`[admin] ${disabled ? '停用' : '恢复'}了运维账号 ${result.account.id}`);
+    return result;
+  }
+
+  /** Delete one operator account and end its sessions. */
+  async function deleteOperator(id) {
+    if (!adminAccountsAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const result = await adminAccounts.remove(id);
+    if (result.ok) { dropAccountSessions(result.id); log.info?.(`[admin] 删除了运维账号 ${result.id}`); }
+    return result;
+  }
+
   // ---- announcements (the operator's公告 console) ------------------------------------------------------
   //
   // Every write goes through the shared AnnouncementStore, not a parallel path: the CLI (tools/announcements.mjs) and
-  // this console then produce the same hash-verified index, and a publication stays immutable (a new id, never an
-  // overwrite). Failures are returned as `error` text, never thrown: an operator's typo must not take the server down.
+  // this console then produce the same hash-verified index. A publication keeps its id forever, but its title and body
+  // can be corrected (update), and the identity that published it is recorded in `author` — players see which operator
+  // a notice came from. Failures are returned as `error` text, never thrown: an operator's typo must not take the
+  // server down.
 
   const announcementsAvailable = () => !!announcements && typeof announcements.list === 'function';
 
@@ -417,7 +517,8 @@ export function createAdminService(deps) {
 
   /**
    * Publish a new announcement. `id` may be omitted (the store generates one); `pin` also makes it the sole pinned one.
-   * @param {{ id?: string, title?: string, markdown?: string, pin?: boolean }} input
+   * `author` is the logged-in identity's id, recorded so players see which operator published it.
+   * @param {{ id?: string, title?: string, markdown?: string, pin?: boolean, author?: string|null }} input
    */
   function publishAnnouncement(input) {
     if (!announcementsAvailable()) return { ok: false, error: 'UNAVAILABLE' };
@@ -426,9 +527,28 @@ export function createAdminService(deps) {
       title: String(input.title ?? ''),
       markdown: String(input.markdown ?? ''),
       pin: input.pin === true,
+      author: typeof input.author === 'string' ? input.author : null,
     }));
     if (result?.error) return { ok: false, error: result.error };
-    log.info?.(`[admin] 发布公告 ${result.id}${input.pin === true ? '（并置顶）' : ''}：${result.title}`);
+    const who = result.author ? `（${result.author}）` : '';
+    log.info?.(`[admin] ${result.author || 'CLI'} 发布公告 ${result.id}${input.pin === true ? '（并置顶）' : ''}${who}：${result.title}`);
+    return { ok: true, item: result };
+  }
+
+  /**
+   * Correct an already published announcement: the id, its position and its publication date survive, only the title
+   * and the Markdown change. `author` is filled in when a publication without a recorded operator is edited.
+   * @param {string} id @param {{ title?: string, markdown?: string, author?: string|null }} input
+   */
+  function updateAnnouncement(id, input) {
+    if (!announcementsAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const result = safe(() => announcements.update(String(id || ''), {
+      title: String(input.title ?? ''),
+      markdown: String(input.markdown ?? ''),
+      author: typeof input.author === 'string' ? input.author : null,
+    }));
+    if (result?.error) return { ok: false, error: result.error };
+    log.info?.(`[admin] ${input.author || 'CLI'} 修改公告 ${result.id}：${result.title}`);
     return { ok: true, item: result };
   }
 
@@ -466,13 +586,77 @@ export function createAdminService(deps) {
     return { ok: true, msgid: command.msgid };
   }
 
+  // ---- OneBot 群招募 (docs/ADMIN.md §4.4) ----------------------------------------------------------------
+  //
+  // The forward-WS OneBot client (server/onebot.js) is optional (tests, deployments without the feature). The console
+  // reads config + live status in one answer and never sees the access token: only `tokenSet`. A save persists through
+  // the shared store (the same file the boot reads), re-evaluates the connection at once and refreshes the rooms'
+  // room.state.recruit flag, so a running server picks the change up without a restart.
+
+  const onebotAvailable = () => !!onebot && typeof onebot.broadcast === 'function' && typeof onebot.updateConfig === 'function';
+
+  /** The masked config + live status, or UNAVAILABLE without the feature. */
+  function onebotInfo() {
+    if (!onebotAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const cfg = onebot.config?.get?.() || {};
+    return { ok: true,
+      config: {
+        enabled: cfg.enabled === true, mode: cfg.mode === 'server' ? 'server' : 'client',
+        url: cfg.url || '', tokenSet: !!cfg.token,
+        groups: Array.isArray(cfg.groups) ? [...cfg.groups] : [],
+        template: cfg.template || '', cooldownSec: Number.isInteger(cfg.cooldownSec) ? cfg.cooldownSec : 60,
+        linkBase: cfg.linkBase || '',
+      },
+      status: safe(() => onebot.status() || null), at: now() };
+  }
+
+  /**
+   * Validate + persist a config patch, re-evaluate the connection and refresh the rooms' recruit flag. `token` absent =
+   * keep the stored one; `token: ''` = clear it.
+   * @param {Record<string, unknown>} patch @param {string} actorId
+   */
+  async function updateOnebotConfig(patch, actorId) {
+    if (!onebotAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const clean = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
+    if (!clean) return { ok: false, error: 'BAD_BODY' };
+    /** @type {Record<string, unknown>} */
+    const fields = {};
+    for (const key of ['enabled', 'mode', 'url', 'groups', 'template', 'cooldownSec', 'linkBase']) if (Object.hasOwn(clean, key)) fields[key] = clean[key];
+    if (Object.hasOwn(clean, 'token')) fields.token = String(clean.token ?? '');
+    let next;
+    try { next = await onebot.updateConfig(fields); }
+    catch (e) { return { ok: false, error: String(e?.message || e) }; }
+    try { lobby?.refreshRecruitFlags?.(); } catch { /* a room refresh must not fail the save */ }
+    log.info?.(`[admin] ${actorId} 保存了 OneBot 配置（${next.mode === 'server' ? '反向' : '正向'}，enabled=${next.enabled}，群 ${next.groups.length} 个，冷却 ${next.cooldownSec}s）`);
+    return { ok: true, config: { enabled: next.enabled, mode: next.mode, url: next.url, tokenSet: !!next.token, groups: [...next.groups], template: next.template, cooldownSec: next.cooldownSec, linkBase: next.linkBase } };
+  }
+
+  /** Drop the reconnect backoff and dial now. */
+  function onebotReconnect() {
+    if (!onebotAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    safe(() => onebot.reconnectNow());
+    log.info?.('[admin] 手动重连 OneBot');
+    return { ok: true };
+  }
+
+  /** A fixed test line to every configured group: proof that endpoint, token and membership all work. */
+  async function onebotTestSend() {
+    if (!onebotAvailable()) return { ok: false, error: 'UNAVAILABLE' };
+    const res = await onebot.broadcast('【卫戍协议：盟约】这是一条 OneBot 测试消息。如果你在群里看到它，说明招募通道正常。');
+    log.info?.(`[admin] OneBot 测试消息：${res.sent}/${res.total}${res.failed?.length ? `（失败：${res.failed.map((f) => `${f.group}: ${f.error}`).join('; ')}）` : ''}`);
+    return { ok: res.sent > 0, ...res };
+  }
+
   return {
     enabled, problem, secretSource,
-    authenticate, login, loggedOut,
+    identity, authenticate, login, loginAccount, loggedOut,
     overview, rooms, closeRoom, broadcast, setMaintenance, maintenanceAvailable,
     accountsAvailable, listAccounts, resetAccountPassword, setAccountBanned, deleteAccount,
+    adminAccountsAvailable, isOwner,
+    listOperators, createOperator, setOperatorPassword, setOperatorDisabled, deleteOperator,
     announcementsAvailable, listAnnouncements, readAnnouncement,
-    publishAnnouncement, pinAnnouncement, unpinAnnouncement, notifyAnnouncement,
+    publishAnnouncement, updateAnnouncement, pinAnnouncement, unpinAnnouncement, notifyAnnouncement,
+    onebotAvailable, onebotInfo, updateOnebotConfig, onebotReconnect, onebotTestSend,
     /** @param {number} since @param {number} limit */
     logs: (since, limit) => ({ ...ring.list(since, limit), at: now() }),
     /** Diagnostics for the boot line; never includes the secret. */

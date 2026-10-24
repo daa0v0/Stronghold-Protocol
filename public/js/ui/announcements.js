@@ -49,6 +49,12 @@ export function announcementDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) ? value.slice(0, 10) : '';
 }
 
+/**
+ * The publishing operator's account id (运维后台 multi-operator accounts, server/adminAccounts.js), in the small type
+ * under the title. `null` means a catalog written without an identity (the CLI), and shows nothing.
+ */
+export const announcementAuthor = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
+
 /** Move focus only when a view switch hid its previously focused control. Visible controls keep their focus. */
 export function focusAnnouncementView(root, previousFocus, view) {
   const doc = root?.ownerDocument;
@@ -110,6 +116,7 @@ export function AnnouncementDialog({ state, actions = viewActions, bodyRef, onVi
             <span class="announcements__item-title">${item.title}</span>
             <span class="announcements__item-meta">
               <time dateTime=${item.publishedAt}>${announcementDate(item.publishedAt)}</time>
+              ${announcementAuthor(item.author) ? html`<span class="announcements__author">${announcementAuthor(item.author)}</span>` : null}
               ${item.id === state.pinnedId ? html`<span class="announcements__pin">${t('置顶')}</span>` : null}
             </span>
           </button>`)}
@@ -126,6 +133,7 @@ export function AnnouncementDialog({ state, actions = viewActions, bodyRef, onVi
             <h3 id="announcement-article-title">${title}</h3>
             ${selected ? html`<div class="announcements__article-meta">
               <time dateTime=${date}>${announcementDate(date)}</time>
+              ${announcementAuthor(detail?.author ?? selected.author) ? html`<span class="announcements__author">${announcementAuthor(detail?.author ?? selected.author)}</span>` : null}
               ${pin ? html`<span class="announcements__pin">${t('置顶')}</span>` : null}
             </div>` : null}
           </div>

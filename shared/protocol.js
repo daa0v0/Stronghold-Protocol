@@ -601,6 +601,11 @@ export const C2S = {
   'room.chat': { matchId: isId, text: isChatTextInput },
   // the waiting-room chat (before the first match starts): the same channel, the room's own id
   'room.lobbyChat': { chatId: isId, text: isChatTextInput },
+  // OneBot 群招募 (docs/ADMIN.md §4.4): any human of a co-op waiting room asks the server to push its recruit template
+  // to the QQ group(s) the operator configured in the 运维后台. No fields; the server owns the template, the per-room
+  // cooldown (room.state.recruit.cooldownSec) and the availability (ONEBOT_UNAVAILABLE / RATE otherwise). A solo room,
+  // a running match and the emergency gate refuse it (NOT_IN_ROOM / WRONG_PHASE / SERVER_EMERGENCY).
+  'room.recruit': {},
   // playerId: the player tapped in the team panel (a 联防 / boss pair field shows two) — what an eliminated viewer or a
   // spectator seat follows from then on (Match.watchPref; community report of 2026-10-06, item 56)
   'g.watch': { fieldId: (v) => isStr(v, 32), playerId: isId, $optional: ['playerId'] },

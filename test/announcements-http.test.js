@@ -34,7 +34,8 @@ test('announcements are public, uncached, metadata-only, and hot published witho
     assert.match(list.headers['content-type'], /application\/json.*utf-8/);
     const index = JSON.parse(list.body);
     assert.equal(index.pinnedId, first.id); assert.equal(index.revision, first.revision);
-    assert.deepEqual(Object.keys(index.items[0]).sort(), ['id', 'publishedAt', 'revision', 'title']);
+    assert.deepEqual(Object.keys(index.items[0]).sort(), ['author', 'id', 'publishedAt', 'revision', 'title']);
+    assert.equal(index.items[0].author, null, 'a publication with no recorded operator exposes author null');
     assert.equal(list.body.includes('中文正文'), false);
     const detail = await request(srv, '/api/announcements/welcome');
     assert.equal(detail.status, 200);

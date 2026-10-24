@@ -165,6 +165,8 @@ export const ERR = Object.freeze({
   TEMP_NOT_EMPTY: 'TEMP_NOT_EMPTY',
   ELIMINATED: 'ELIMINATED',
   SPECTATOR: 'SPECTATOR',         // a spectator seat only watches (MAX_SPECTATORS)
+  // room.recruit (docs/ADMIN.md §4.4 OneBot 群招募): the server has no OneBot group configured, or its connection is down
+  ONEBOT_UNAVAILABLE: 'ONEBOT_UNAVAILABLE',
   // room.setPlugins (DESIGN §32): a plugin this server has not installed; one a room cannot switch on in this version
   // (not a cosmetic or content plugin it loads, not of the room's scope, or not allowed by the server owner's
   // plugins/config.json); a requirement missing or out of range, or a load-order cycle; two plugins in conflict; a set
@@ -207,6 +209,7 @@ export const ERR_TEXT = {
   BAD_TILE: N_('无法部署在该位置'), BAD_TARGET: N_('无效的目标'), SOLD_OUT: N_('已售出'), MAX_LEVEL: N_('调度中心已达最高等级'),
   NOT_YOUR_TURN: N_('尚未轮到你'), ALREADY: N_('已完成该操作'), TEMP_NOT_EMPTY: N_('临时整备区不为空'), ELIMINATED: N_('你已被淘汰'),
   SPECTATOR: N_('观战中无法进行该操作'), INTERNAL: N_('服务器内部错误'),
+  ONEBOT_UNAVAILABLE: N_('群招募当前不可用，请联系服主在后台检查 OneBot 设置'),
   PLUGIN_UNKNOWN: N_('本服务器没有安装该插件'), PLUGIN_BLOCKED: N_('该插件不能在房间中启用'), PLUGIN_DEPENDENCY: N_('缺少该插件需要的其他插件'),
   PLUGIN_CONFLICT: N_('所选插件互相冲突'), PLUGIN_LIMIT: N_('所选插件的素材总量超出本服务器的上限'),
   PLUGIN_RULE_CONFLICT: N_('两个插件把同一个规则开关设成了不同的选项'),

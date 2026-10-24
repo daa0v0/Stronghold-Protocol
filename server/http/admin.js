@@ -4,7 +4,8 @@
 //   GET  /api/admin/overview  → process, host, lobby, network, maintenance, settings (authenticated)
 //   GET  /api/admin/rooms     → one entry per room, with the running match's phase/round and its fixed pool groups
 //   GET  /api/admin/logs      → the log ring since `?since=` (authenticated)
-//   POST /api/admin/login     { secret } → 200 + the per-process cookie
+//   GET  /api/admin/session   → who this session is (owner, or one operator account)
+//   POST /api/admin/login     { secret } or { id, password } → 200 + the per-session cookie
 //   POST /api/admin/logout    → 200 + a cleared cookie
 //   POST /api/admin/broadcast { text, kind } → a toast + a CUSTOM ticker line to every connection
 //   POST /api/admin/maintenance { on } → the server's own protection on/off (refuses new visits, freezes matches)
@@ -13,8 +14,20 @@
 //   GET  /api/admin/announcements      → the catalog (metadata + pinned id)
 //   GET  /api/admin/announcements?id=   → one announcement's verified Markdown
 //   POST /api/admin/announcements/publish { id?, title, markdown, pin } → publish a new one
+//   POST /api/admin/announcements/update { id, title, markdown } → correct a published one (id and date survive)
 //   POST /api/admin/announcements/pin { id } · /unpin {} → the sole pinned announcement
 //   POST /api/admin/announcements/notify { id } → notify connected players about a published one
+//
+//   GET  /api/admin/operators            → the operator accounts (owner only)
+//   POST /api/admin/operators/create     { id, password, name? } (owner only)
+//   POST /api/admin/operators/password   { id, password } (owner only)
+//   POST /api/admin/operators/disabled   { id, disabled } (owner only)
+//   POST /api/admin/operators/delete     { id } (owner only)
+//
+//   GET  /api/admin/onebot               → the OneBot 群招募 config (token masked) + live connection status
+//   POST /api/admin/onebot/config        { enabled?, url?, token?, groups?, template?, cooldownSec? } → save (token absent = keep, '' = clear)
+//   POST /api/admin/onebot/reconnect     {} → drop the backoff and dial now
+//   POST /api/admin/onebot/test          {} → send a fixed test line to every configured group
 //
 // With no ADMIN_SECRET the whole prefix answers 404: a deployment that forgot the secret has no console at all (there is
 // deliberately no default password). Unauthenticated API calls answer 401; the console shell itself is public, it only
@@ -62,14 +75,18 @@ const wantJson = (req) => {
 };
 
 /** The leaf names below /api/admin. Anything else is 404; a known leaf with the wrong method is 405. */
-const READ_ENDPOINTS = new Set(['/overview', '/rooms', '/logs']);
+const READ_ENDPOINTS = new Set(['/overview', '/rooms', '/logs', '/session']);
 const WRITE_ENDPOINTS = new Set(['/broadcast', '/maintenance', '/rooms/close']);
 /** The account console's write endpoints (the list is read by GET /api/admin/accounts). */
 const ACCOUNT_WRITE_ENDPOINTS = new Set(['/accounts/password', '/accounts/ban', '/accounts/delete']);
 /** The announcement console's write endpoints (the catalog is read by GET /api/admin/announcements). */
 const ANNOUNCEMENT_WRITE_ENDPOINTS = new Set([
-  '/announcements/publish', '/announcements/pin', '/announcements/unpin', '/announcements/notify',
+  '/announcements/publish', '/announcements/update', '/announcements/pin', '/announcements/unpin', '/announcements/notify',
 ]);
+/** The operator-account endpoints (owner only; the list is read by GET /api/admin/operators). */
+const OPERATOR_WRITE_ENDPOINTS = new Set(['/operators/create', '/operators/password', '/operators/disabled', '/operators/delete']);
+/** The OneBot 群招募 endpoints (the config + status are read by GET /api/admin/onebot). */
+const ONEBOT_WRITE_ENDPOINTS = new Set(['/onebot/config', '/onebot/reconnect', '/onebot/test']);
 
 /**
  * @param {{ admin: any, serveStatic: (req: any, res: any, rawPath: string, query: string) => Promise<void>,
@@ -113,7 +130,15 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
       const body = await readJsonBody(req);
       if (body === undefined) { json(req, res, 413, { ok: false, error: 'BODY_TOO_LARGE' }); res.once('finish', () => req.destroy()); return true; }
       if (!body) { json(req, res, 400, { ok: false, error: 'BAD_BODY' }); return true; }
-      const result = admin.login(req, body.secret);
+      // Two ways in: the shared secret (the owner, who manages the operator accounts) or one named account with its
+      // own password. Both share one throttle and both answer the same cookie shape.
+      // The account path accepts the credential as `password`, falling back to `secret`: the console's single input
+      // naturally fills both, and a script that only knows `secret` keeps working.
+      const accountId = typeof body.id === 'string' ? body.id.trim() : '';
+      const result = accountId
+        ? await admin.loginAccount(req, accountId, typeof body.password === 'string' ? body.password
+          : typeof body.secret === 'string' ? body.secret : '')
+        : await admin.login(req, body.secret);
       if (!result.ok) {
         res.setHeader('Cache-Control', 'no-store');
         if (result.retryAfterMs) res.setHeader('Retry-After', String(Math.ceil(result.retryAfterMs / 1000)));
@@ -121,7 +146,7 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
         return true;
       }
       res.setHeader('Set-Cookie', result.cookie);
-      json(req, res, 200, { ok: true });
+      json(req, res, 200, { ok: true, identity: result.identity });
       return true;
     }
     if (path === `${ADMIN_API_PREFIX}/logout`) {
@@ -131,8 +156,9 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
       return true;
     }
 
-    // ---- everything else needs the secret ----
-    if (!admin.authenticate(req)) {
+    // ---- everything else needs a credential; the session also says WHO is acting ----
+    const session = admin.identity(req);
+    if (!session) {
       if (wantJson(req) || isApi(path)) {
         res.setHeader('WWW-Authenticate', 'Bearer');
         json(req, res, 401, { ok: false, error: 'UNAUTHORIZED' });
@@ -174,6 +200,36 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
       return true;
     }
 
+    // ---- the operator accounts: owner only (creating an account is handing out console access) ----
+    if (leaf === '/operators' || OPERATOR_WRITE_ENDPOINTS.has(leaf)) {
+      if (!admin.adminAccountsAvailable?.()) { json(req, res, 503, { ok: false, error: 'UNAVAILABLE' }); return true; }
+      if (!admin.isOwner(session)) { json(req, res, 403, { ok: false, error: 'OWNER_ONLY' }); return true; }
+
+      if (leaf === '/operators') {
+        if (method !== 'GET') { json(req, res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }); return true; }
+        const result = await admin.listOperators();
+        json(req, res, result.ok ? 200 : 503, result);
+        return true;
+      }
+
+      if (method !== 'POST') { json(req, res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }); return true; }
+      const body = await readJsonBody(req);
+      if (body === undefined) { json(req, res, 413, { ok: false, error: 'BODY_TOO_LARGE' }); res.once('finish', () => req.destroy()); return true; }
+      if (!body) { json(req, res, 400, { ok: false, error: 'BAD_BODY' }); return true; }
+      const id = typeof body.id === 'string' ? body.id.trim() : '';
+      if (!id) { json(req, res, 400, { ok: false, error: 'BAD_BODY' }); return true; }
+      const password = typeof body.password === 'string' ? body.password : '';
+      const name = typeof body.name === 'string' ? body.name : '';
+      let result;
+      if (leaf === '/operators/create') result = await admin.createOperator({ id, password, name });
+      else if (leaf === '/operators/password') result = await admin.setOperatorPassword(id, password);
+      else if (leaf === '/operators/disabled') result = await admin.setOperatorDisabled(id, body.disabled !== false);
+      else result = await admin.deleteOperator(id);
+      const status = result.ok ? 200 : result.error === 'NO_SUCH_ACCOUNT' ? 404 : 400;
+      json(req, res, status, result);
+      return true;
+    }
+
     // ---- the announcement console: its own leaves, so publishing never shares the room endpoints ----
     if (leaf === '/announcements' || ANNOUNCEMENT_WRITE_ENDPOINTS.has(leaf)) {
       if (!admin.announcementsAvailable?.()) { json(req, res, 503, { ok: false, error: 'UNAVAILABLE' }); return true; }
@@ -189,7 +245,7 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
 
       if (method !== 'POST') { json(req, res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }); return true; }
       // Publishing carries a Markdown document, so this leaf gets the wider cap; the others keep the generic one.
-      const limit = leaf === '/announcements/publish' ? ADMIN_ANNOUNCEMENT_BODY_MAX_BYTES : ADMIN_BODY_MAX_BYTES;
+      const limit = leaf === '/announcements/publish' || leaf === '/announcements/update' ? ADMIN_ANNOUNCEMENT_BODY_MAX_BYTES : ADMIN_BODY_MAX_BYTES;
       const body = await readJsonBody(req, limit);
       if (body === undefined) { json(req, res, 413, { ok: false, error: 'BODY_TOO_LARGE' }); res.once('finish', () => req.destroy()); return true; }
       if (!body) { json(req, res, 400, { ok: false, error: 'BAD_BODY' }); return true; }
@@ -198,6 +254,14 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
         const result = admin.publishAnnouncement({
           id: typeof body.id === 'string' ? body.id.trim() : undefined,
           title: body.title, markdown: body.markdown, pin: body.pin === true,
+          author: session.id,
+        });
+        json(req, res, result.ok ? 200 : 400, result);
+        return true;
+      }
+      if (leaf === '/announcements/update') {
+        const result = admin.updateAnnouncement(body.id, {
+          title: body.title, markdown: body.markdown, author: session.id,
         });
         json(req, res, result.ok ? 200 : 400, result);
         return true;
@@ -217,9 +281,39 @@ export function createAdminHandler({ admin, serveStatic, log = console }) {
       return true;
     }
 
+    // ---- the OneBot 群招募 console: its own leaves, so a bad config edit never shares the room endpoints ----
+    if (leaf === '/onebot' || ONEBOT_WRITE_ENDPOINTS.has(leaf)) {
+      if (!admin.onebotAvailable?.()) { json(req, res, 503, { ok: false, error: 'UNAVAILABLE' }); return true; }
+
+      if (leaf === '/onebot') {
+        if (method !== 'GET') { json(req, res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }); return true; }
+        json(req, res, 200, admin.onebotInfo());
+        return true;
+      }
+
+      if (method !== 'POST') { json(req, res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }); return true; }
+      const body = await readJsonBody(req);
+      if (body === undefined) { json(req, res, 413, { ok: false, error: 'BODY_TOO_LARGE' }); res.once('finish', () => req.destroy()); return true; }
+      if (!body) { json(req, res, 400, { ok: false, error: 'BAD_BODY' }); return true; }
+
+      if (leaf === '/onebot/config') {
+        const result = await admin.updateOnebotConfig(body, session.id);
+        json(req, res, result.ok ? 200 : 400, result);
+        return true;
+      }
+      if (leaf === '/onebot/reconnect') {
+        json(req, res, 200, admin.onebotReconnect());
+        return true;
+      }
+      const result = await admin.onebotTestSend();
+      json(req, res, result.ok ? 200 : 502, result);
+      return true;
+    }
+
     if (READ_ENDPOINTS.has(leaf)) {
       if (method !== 'GET') { json(req, res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }); return true; }
       if (leaf === '/overview') { json(req, res, 200, admin.overview()); return true; }
+      if (leaf === '/session') { json(req, res, 200, { ok: true, identity: session }); return true; }
       if (leaf === '/rooms') { json(req, res, 200, admin.rooms()); return true; }
       const q = new URLSearchParams(parts.query);
       const since = Number(q.get('since')) || 0;

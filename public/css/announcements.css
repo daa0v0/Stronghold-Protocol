@@ -20,6 +20,9 @@
 .announcements__item.is-selected { background: var(--mint-a10); border-left-color: var(--mint-500); color: var(--text-hi); }
 .announcements__item-title { font-size: max(calc(.18 * var(--t)), 13px); font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
 .announcements__item-meta, .announcements__article-meta { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem; color: var(--text-lo); font-size: max(calc(.13 * var(--t)), 11px); }
+/* the publishing operator's account id (运维后台 multi-operator accounts): the small line under the title */
+.announcements__author { font-family: var(--mono, ui-monospace, monospace); color: var(--text-md); }
+.announcements__author::before { content: "@"; opacity: .65; }
 .announcements__pin { display: inline-flex; align-items: center; padding: .015rem .065rem; color: var(--mint-400); border: 1px solid var(--mint-700); background: var(--mint-a10); font-size: max(calc(.12 * var(--t)), 10px); line-height: 1.5; }
 .announcements__detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .announcements__article-head { display: flex; flex-direction: column; flex: none; gap: .08rem; padding: .2rem .28rem .17rem; border-bottom: 1px solid var(--line); }

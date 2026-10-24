@@ -7,8 +7,10 @@ export const ANNOUNCEMENT_MAX_BODY_CHARS = 50000;
 export const ANNOUNCEMENT_MAX_BODY_BYTES = 128 * 1024;
 export const ANNOUNCEMENT_MAX_INDEX_BYTES = 2 * 1024 * 1024;
 export const ANNOUNCEMENT_MAX_ITEMS = 2000;
+/** The publishing operator's account id, shown to players in small type under the title (运维后台 multi-operator). */
+export const ANNOUNCEMENT_MAX_AUTHOR_LENGTH = 32;
 
-/** @typedef {{ id: string, title: string, publishedAt: string, revision: string }} AnnouncementMetadata */
+/** @typedef {{ id: string, title: string, publishedAt: string, revision: string, author: string|null }} AnnouncementMetadata */
 /** @typedef {{ revision: string, pinnedId: string|null, items: AnnouncementMetadata[] }} AnnouncementIndex */
 
 /** IDs are filenames on Windows too; never accept a path, extension or reserved device name. */
@@ -20,6 +22,16 @@ export function isAnnouncementId(value) {
 /** A publication has a persistent random revision, so a recreated directory cannot reuse a suppressed number. */
 export function isAnnouncementRevision(value) {
   return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,79}$/.test(value);
+}
+
+/**
+ * The publishing operator's account id (运维后台 docs/ADMIN.md). Optional: a catalog written by the CLI has none, and
+ * every reader shows it the same way — `null` means "unknown operator", never a blank string.
+ */
+export function isAnnouncementAuthor(value) {
+  if (value == null) return true;
+  return typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{2,31}$/.test(value)
+    && value.length <= ANNOUNCEMENT_MAX_AUTHOR_LENGTH;
 }
 
 export function isAnnouncementTitle(value) {
@@ -50,9 +62,12 @@ export function readAnnouncementIndex(raw) {
   for (const item of raw.items) {
     if (!item || typeof item !== 'object' || !isAnnouncementId(item.id) || !isAnnouncementTitle(item.title)
       || !isAnnouncementRevision(item.revision) || ids.has(item.id) || revisions.has(item.revision)
-      || !isAnnouncementPublishedAt(item.publishedAt)) return null;
+      || !isAnnouncementPublishedAt(item.publishedAt) || !isAnnouncementAuthor(item.author)) return null;
     ids.add(item.id); revisions.add(item.revision);
-    items.push({ id: item.id, title: item.title, publishedAt: item.publishedAt, revision: item.revision });
+    items.push({
+      id: item.id, title: item.title, publishedAt: item.publishedAt, revision: item.revision,
+      author: typeof item.author === 'string' ? item.author : null,
+    });
   }
   if (items.length ? raw.revision !== items[0].revision : raw.revision !== '') return null;
   if (raw.pinnedId !== null && (!isAnnouncementId(raw.pinnedId) || !ids.has(raw.pinnedId))) return null;

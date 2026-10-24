@@ -1,8 +1,8 @@
 // 公告管理后台 (docs/ADMIN.md): the operator's announcement console. The assertions cover the SAFETY contract first —
 // the console needs the admin secret like every other admin route, and no deployment without announcements answers a
-// plausible-looking empty list — then the store contract that must survive adding an HTTP writer: a publication is
-// immutable (the same id is refused), the index stays hash-verified, pinning is exclusive, and a notice reaches the
-// running server's spool rather than a second send path.
+// plausible-looking empty list — then the store contract that must survive adding an HTTP writer: an id is never
+// reused (a correction goes through update), the index stays hash-verified, pinning is exclusive, and a notice reaches
+// the running server's spool rather than a second send path.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
@@ -120,7 +120,7 @@ test('publish, pin and unpin go through the shared store and keep the index hash
   } finally { await srv.close(); }
 });
 
-test('a publication is immutable and bad input is refused without taking the server down', async () => {
+test('an id is never reused, update corrects it in place, and bad input is refused without taking the server down', async () => {
   const srv = await makeServer();
   try {
     const base = `http://127.0.0.1:${srv.port}`;
@@ -131,32 +131,55 @@ test('a publication is immutable and bad input is refused without taking the ser
     });
     assert.equal(first.status, 200, first.text);
 
-    // Same id again: refused, and the original body is untouched.
+    // Publishing the same id again is refused: a publication is permanent, a correction goes through update.
     const again = await call(base, '/api/admin/announcements/publish', {
       method: 'POST', cookie, body: { id: 'welcome', title: '改了', markdown: '别的正文' },
     });
     assert.equal(again.status, 400);
     assert.match(again.json.error, /已存在/);
+
+    // update corrects the title and the body; the id, the date and the position survive.
+    const fixed = await call(base, '/api/admin/announcements/update', {
+      method: 'POST', cookie, body: { id: 'welcome', title: '开服（已修正）', markdown: '改好的正文。' },
+    });
+    assert.equal(fixed.status, 200, fixed.text);
     const read = await call(base, `/api/admin/announcements?id=welcome`, { cookie });
     assert.equal(read.status, 200, read.text);
-    assert.equal(read.json.item.title, '开服');
+    assert.equal(read.json.item.title, '开服（已修正）');
+    assert.equal(read.json.item.markdown, '改好的正文。');
+    assert.equal(read.json.item.publishedAt, first.json.item.publishedAt);
+    assert.notEqual(read.json.item.revision, first.json.item.revision, 'a correction moves the revision');
+    // The newest publication is the catalog revision, so a correction of it re-notifies players.
+    assert.equal((await call(base, '/api/admin/announcements', { cookie })).json.revision, read.json.item.revision);
 
-    // Refused: empty title, empty body, an illegal id, pinning something that does not exist, notifying an unknown id.
-    const bad = [
+    // Refused: unknown id, empty title, empty body, an illegal id, pinning something that does not exist, notifying an unknown id.
+    const badUpdate = [
+      { id: 'nope', title: '标题', markdown: 'x' },
+      { id: 'welcome', title: '', markdown: 'x' },
+      { id: 'welcome', title: '标题', markdown: '   ' },
+      { id: 'Bad ID!', title: '标题', markdown: 'x' },
+    ];
+    for (const body of badUpdate) {
+      const res = await call(base, '/api/admin/announcements/update', { method: 'POST', cookie, body });
+      assert.equal(res.status, 400, JSON.stringify(body));
+    }
+    const badPublish = [
       { id: 'a', title: '', markdown: 'x' },
       { id: 'b', title: '标题', markdown: '   ' },
       { id: 'Bad ID!', title: '标题', markdown: 'x' },
     ];
-    for (const body of bad) {
+    for (const body of badPublish) {
       const res = await call(base, '/api/admin/announcements/publish', { method: 'POST', cookie, body });
       assert.equal(res.status, 400, JSON.stringify(body));
     }
     assert.equal((await call(base, '/api/admin/announcements/pin', { method: 'POST', cookie, body: { id: 'nope' } })).status, 400);
     assert.equal((await call(base, '/api/admin/announcements/notify', { method: 'POST', cookie, body: { id: 'nope' } })).status, 400);
 
-    // Every one of those left the server answering.
+    // Every one of those left the server answering, and the correction itself survived.
     assert.equal((await call(base, '/healthz')).status, 200);
-    assert.equal((await call(base, '/api/admin/announcements', { cookie })).json.items.length, 1);
+    const final = await call(base, '/api/admin/announcements', { cookie });
+    assert.equal(final.json.items.length, 1);
+    assert.equal(final.json.items[0].title, '开服（已修正）');
   } finally { await srv.close(); }
 });
 

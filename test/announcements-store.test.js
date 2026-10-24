@@ -55,7 +55,8 @@ test('publication persists metadata and UTF-8 Markdown; a fresh server sees late
   assert.deepEqual(index.items, [second, first], 'publication order is independent of a displayed date');
   assert.equal(index.revision, second.revision);
   assert.equal(defaultAnnouncementId(index), 'second');
-  assert.deepEqual(Object.keys(index.items[0]).sort(), ['id', 'publishedAt', 'revision', 'title']);
+  assert.deepEqual(Object.keys(index.items[0]).sort(), ['author', 'id', 'publishedAt', 'revision', 'title']);
+  assert.equal(index.items[0].author, null, 'a publication without a recorded operator keeps author null');
   assert.match(catalogOf(dir).items[0].sha256, /^[a-f0-9]{64}$/);
   assert.equal(fs.readdirSync(dir).some((name) => name.startsWith('.tmp-') || name === '.write.lock'), false);
 });
@@ -176,6 +177,57 @@ test('an administration lock rejects concurrent updates without modifying existi
   assert.deepEqual(store.list(), before);
   assert.equal(fs.existsSync(path.join(dir, 'two.md')), false);
   assert.equal(fs.readFileSync(path.join(dir, '.write.lock'), 'utf8'), 'another publisher');
+});
+
+test('update corrects a publication in place: same id, same date, same position, new revision and body', (t) => {
+  const { dir, store } = fixture(t);
+  const one = publish(store, 'one', { publishedAt: '2026-01-01T00:00:00.000Z' });
+  publish(store, 'two', { publishedAt: '2026-02-01T00:00:00.000Z' });
+  publish(store, 'three', { publishedAt: '2026-03-01T00:00:00.000Z' });
+  const before = store.list();
+  assert.deepEqual(before.items.map((i) => i.id), ['three', 'two', 'one']);
+
+  // Correcting the OLDEST entry: it stays where it was, its revision moves, the catalog revision does not.
+  const corrected = store.update('one', { title: '  修过的标题  ', markdown: '# 新正文\n\n改好了。\n' });
+  assert.equal(corrected.title, '修过的标题');
+  assert.notEqual(corrected.revision, one.revision);
+  assert.equal(corrected.publishedAt, '2026-01-01T00:00:00.000Z');
+  const after = store.list();
+  assert.deepEqual(after.items.map((i) => i.id), ['three', 'two', 'one'], 'history order survives a correction');
+  assert.equal(after.revision, before.revision, 'correcting an older entry leaves the suppression revision alone');
+  assert.equal(store.read('one').markdown, '# 新正文\n\n改好了。\n');
+
+  // Correcting the NEWEST entry moves the catalog revision, so players who dismissed it are reminded again.
+  const newest = store.update('three', { title: '最新修正', markdown: '第三条的最新内容。' });
+  const head = store.list();
+  assert.equal(head.revision, newest.revision);
+  assert.notEqual(head.revision, after.revision);
+
+  // The on-disk index stays hash-verified for every entry, and the writer keeps no temp/lock leftovers.
+  const catalog = catalogOf(dir);
+  for (const item of catalog.items) {
+    const bytes = fs.readFileSync(path.join(dir, `${item.id}.md`));
+    assert.equal(bytes.length, item.bytes, `${item.id} byte count`);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), item.sha256, `${item.id} sha256`);
+  }
+  assert.equal(fs.readdirSync(dir).some((name) => name.startsWith('.tmp-') || name === '.write.lock'), false);
+});
+
+test('update refuses unknown ids and bad content, and never re-stamps the publishing operator', (t) => {
+  const { store } = fixture(t);
+  publish(store, 'one', { author: 'alice' });
+  assert.equal(store.list().items[0].author, 'alice');
+  assert.throws(() => store.update('missing', { title: 'x', markdown: 'y' }), /找不到公告/);
+  for (const extra of [{ title: '' }, { title: 'bad\ntitle' }, { markdown: '   ' }, { author: 'Bad ID!' }]) {
+    assert.throws(() => store.update('one', { ...extra }));
+  }
+  const same = store.update('one', { title: '换个标题', markdown: '新内容。', author: 'bob' });
+  assert.equal(same.author, 'alice', 'a correction keeps the original publishing operator');
+  assert.equal(store.read('one').markdown, '新内容。');
+  // A CLI publication without an operator gains one only when an edit supplies it.
+  const plain = store.update('one', { title: '再换', markdown: '又改。' });
+  assert.equal(plain.author, 'alice');
+  assert.throws(() => store.publish({ id: 'one', title: 'x', markdown: 'y' }), /已存在/);
 });
 
 test('body limits use the same UTF-16 character budget as the renderer, in addition to the byte limit', (t) => {

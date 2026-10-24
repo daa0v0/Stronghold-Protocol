@@ -8,9 +8,10 @@ import {
 } from '../../public/js/ui/announcementModel.js';
 
 const DATE = '2026-10-09T00:00:00.000Z';
-const A = { id: 'a', title: '公告 A', publishedAt: DATE, revision: 'pub-a' };
-const B = { id: 'b', title: '公告 B', publishedAt: DATE, revision: 'pub-b' };
-const C = { id: 'c', title: '公告 C', publishedAt: DATE, revision: 'pub-c' };
+// `author` is the publishing operator's id (server/adminAccounts.js); null = published without an identity (the CLI).
+const A = { id: 'a', title: '公告 A', publishedAt: DATE, revision: 'pub-a', author: null };
+const B = { id: 'b', title: '公告 B', publishedAt: DATE, revision: 'pub-b', author: 'bob' };
+const C = { id: 'c', title: '公告 C', publishedAt: DATE, revision: 'pub-c', author: null };
 const indexOf = (items = [A], pinnedId = null) => ({ revision: items[0]?.revision || '', pinnedId, items });
 const detailOf = (item, markdown = `# ${item.title}\n\n公告正文。`) => ({ ...item, markdown });
 const responseOf = (payload, ok = true) => ({ ok, json: async () => payload });

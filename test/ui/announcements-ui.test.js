@@ -224,6 +224,24 @@ test('disposing lifecycle stops scheduled checks and subscription work', async (
   assert.equal(installed.getContext().ready, false);
 });
 
+test('the publishing operator is shown in small type under the title and in the history list', () => {
+  const published = { ...item, author: 'alice' };
+  const anonymous = metadata('older', 'pub-older');
+  const actions = { select() {}, close() {}, refresh() {}, setSuppressed() {}, showList() {}, showDetail() {} };
+  const state = { ...createAnnouncementState(), open: true, revision: published.revision, pinnedId: null,
+    items: [published, anonymous], selectedId: published.id, detail: { ...published, markdown: '正文。' } };
+  const nodes = [...walk(AnnouncementDialog({ state, actions }))];
+
+  // 详情：标题下方小字是发布者 ID
+  const authors = nodes.filter((node) => classed(node, 'announcements__author'));
+  assert.equal(authors.length, 2, 'the detail and the matching history entry both carry the id');
+  assert.equal(authors[0].props.children, 'alice');
+  assert.equal(authors[1].props.children, 'alice');
+  // 匿名公告（CLI 发布）不显示任何作者行
+  const plain = { ...createAnnouncementState(), open: true, ...index, selectedId: item.id, detail: { ...item, markdown: 'x' } };
+  assert.equal([...walk(AnnouncementDialog({ state: plain, actions }))].filter((node) => classed(node, 'announcements__author')).length, 0);
+});
+
 test('reader keeps history navigation, Markdown source, persistent preference and explicit close controls', () => {
   const older = metadata('older', 'pub-older');
   const calls = [];

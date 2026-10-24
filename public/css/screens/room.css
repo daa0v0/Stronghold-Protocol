@@ -34,6 +34,11 @@
   text-shadow: 0 0 .16rem rgba(23, 249, 183, .45);
 }
 .invite__btns { display: flex; flex-direction: column; gap: .06rem; }
+/* 群招募 (docs/ADMIN.md §4.4): a third stacked button outgrows the topbar — with the recruit button present the
+   two copy buttons go side by side and the recruit takes one full-width row below, so the box keeps its height.
+   (the recruit button is wrapped in its Tooltip's .tt-anchor, which is the actual grid item) */
+.invite__btns:has(.invite__recruit) { display: grid; grid-template-columns: repeat(2, minmax(0, auto)); justify-content: end; align-items: center; }
+.invite__btns:has(.invite__recruit) .tt-anchor { grid-column: 1 / -1; }
 .solo-note { display: flex; flex-direction: column; align-items: flex-end; gap: .03rem; font-size: calc(.16 * var(--t)); color: var(--text-lo); }
 
 /* ---- seats ------------------------------------------------------------------------------------------------ */

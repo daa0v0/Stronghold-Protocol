@@ -7,8 +7,8 @@ const API = '/api/admin';
 const POLL_MS = 2000;
 const $ = (id) => document.getElementById(id);
 
-/** @type {{ since: number, timer: number|null, running: boolean }} */
-const state = { since: 0, timer: null, running: false };
+/** @type {{ since: number, timer: number|null, running: boolean, identity: { kind: string, id: string, name: string }|null, editing: string|null }} */
+const state = { since: 0, timer: null, running: false, identity: null, editing: null };
 
 /**
  * One API call. Resolves `{ status, body }`; `status: 0` means the request itself failed (server restarting, offline).
@@ -56,6 +56,25 @@ function setState(textValue, cls) {
   const el = $('badge-state');
   el.textContent = textValue;
   el.className = 'badge ' + (cls || 'badge--dim');
+}
+
+/** Who is logged in (owner, or one operator account). The badge is the only place the console names the identity. */
+function renderIdentity(identity) {
+  state.identity = identity || null;
+  const badge = $('badge-who');
+  if (!identity) { badge.hidden = true; badge.textContent = ''; $('operators-panel').hidden = true; return; }
+  badge.hidden = false;
+  badge.textContent = identity.kind === 'owner' ? '主密钥' : `${identity.name}（${identity.id}）`;
+  // Only the owner manages the operator accounts: creating an account is handing out console access.
+  $('operators-panel').hidden = identity.kind !== 'owner';
+  if (identity.kind === 'owner') loadOperators();
+}
+
+/** Ask the server who this cookie belongs to (also covers a reload, where the login response is long gone). */
+async function loadSession() {
+  const res = await api('/session');
+  if (res.status === 200 && res.body && res.body.identity) renderIdentity(res.body.identity);
+  else renderIdentity(null);
 }
 
 // ---- overview ---------------------------------------------------------------------------------------------
@@ -209,8 +228,9 @@ async function loadAccounts() {
 }
 
 // ---- announcements -----------------------------------------------------------------------------------------
-// The公告 console: publish a Markdown notice, pin the one the lobby opens, and push an explicit notice to players who
-// are already in a match. Every title/id is operator-supplied, so they go through textContent like everything else.
+// The公告 console: publish a Markdown notice, correct a published one, pin the one the lobby opens, and push an
+// explicit notice to players who are already in a match. Every title/id is operator-supplied, so they go through
+// textContent like everything else. The author recorded on each announcement is the identity that published it.
 
 /** Render the announcement table. */
 function renderAnnouncements(result) {
@@ -230,6 +250,7 @@ function renderAnnouncements(result) {
     tr.append(
       cell(a.id, 'mono'),
       cell(a.title),
+      cell(a.author || '—', a.author ? 'mono' : null),
       cell(a.publishedAt ? new Date(a.publishedAt).toLocaleString('zh-CN') : '—'),
       cell(a.pinned ? '已置顶' : '—', a.pinned ? 'state-live' : null),
     );
@@ -244,6 +265,13 @@ function renderAnnouncements(result) {
       td.append(btn);
       return btn;
     };
+
+    // 修改：把这条公告读回表单（编号不变，只改标题与正文）
+    add('修改', 'btn--ghost', async () => {
+      const res = await api('/announcements?id=' + encodeURIComponent(a.id));
+      if (res.status !== 200 || !res.body.item) { alert('读取公告失败：' + ((res.body && res.body.error) || res.status)); return; }
+      startEdit(res.body.item);
+    });
 
     if (a.pinned) {
       add('取消置顶', 'btn--ghost', async () => {
@@ -289,6 +317,222 @@ async function loadAnnouncements() {
   renderAnnouncements(res.body);
 }
 
+/** 载入一条已发布公告进入表单：编号固定不可改，标题与正文可改。 */
+function startEdit(item) {
+  state.editing = item.id;
+  $('ann-id').value = item.id;
+  $('ann-id').readOnly = true;
+  $('ann-title').value = item.title || '';
+  $('ann-body').value = item.markdown || '';
+  $('ann-pin').checked = false;
+  $('ann-pin').disabled = true;
+  $('btn-ann-publish').textContent = '保存修改';
+  $('ann-form-summary').textContent = `修改公告 ${item.id}（编号与发布时间不变）`;
+  $('ann-form-panel').open = true;
+  $('ann-msg').textContent = item.author ? `原发布者：${item.author}` : '';
+  $('ann-title').focus();
+}
+
+/** 回到发布新公告的状态。 */
+function resetAnnouncementForm() {
+  state.editing = null;
+  $('ann-id').value = '';
+  $('ann-id').readOnly = false;
+  $('ann-title').value = '';
+  $('ann-body').value = '';
+  $('ann-pin').checked = false;
+  $('ann-pin').disabled = false;
+  $('btn-ann-publish').textContent = '发布';
+  $('ann-form-summary').textContent = '发布新公告';
+  $('ann-msg').textContent = '';
+}
+
+// ---- OneBot 群招募 ------------------------------------------------------------------------------------------
+// The forward-WS OneBot client's console: config + live status in one answer (GET /onebot), saved whole
+// (POST /onebot/config), plus 重连 and a fixed test line. The token never comes back — the form only says whether one
+// is set, and an empty input means "leave it as is".
+
+/** Parse the group textarea: numbers split by newlines, commas (both widths), semicolons or spaces. */
+function parseGroups() {
+  return ($('ob-groups').value || '').split(/[\s,，;；、]+/).map((s) => s.trim()).filter(Boolean);
+}
+
+/** The suggested reverse-WS URL for the OneBot implementation: this page's own host + the fixed path. */
+function suggestServerUrl() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return proto + '//' + location.host + ($('ob-path') ? $('ob-path').textContent : '/onebot/ws');
+}
+
+/** Show/hide the mode-specific fields. */
+function renderOnebotMode(mode) {
+  const server = mode === 'server';
+  $('ob-url-row').hidden = server;
+  $('ob-server-hint').hidden = !server;
+  if (server) $('ob-server-url').textContent = suggestServerUrl();
+}
+
+function renderOnebotStatus(st) {
+  const badge = $('ob-badge');
+  if (!st) { badge.textContent = '—'; badge.className = 'badge badge--dim'; return; }
+  const server = st.mode === 'server';
+  if (st.connected) { badge.textContent = server ? '已连入' : '已连接'; badge.className = 'badge badge--on'; }
+  else if (st.connecting) { badge.textContent = '连接中'; badge.className = 'badge badge--dim'; }
+  else if (server && st.listening) { badge.textContent = '等待 OneBot 连入'; badge.className = 'badge badge--dim'; }
+  else { badge.textContent = st.enabled ? '未连接' : '未启用'; badge.className = 'badge badge--off'; }
+  const view = {
+    ...st,
+    lastErrorAt: st.lastErrorAt ? new Date(st.lastErrorAt).toLocaleString('zh-CN') : null,
+    lastSentAt: st.lastSentAt ? new Date(st.lastSentAt).toLocaleString('zh-CN') : null,
+  };
+  $('ob-status').textContent = JSON.stringify(view, null, 2);
+}
+
+/** Load config + status into the form. The panel stays usable; 503 only means this deployment has no OneBot module. */
+async function loadOnebot() {
+  const res = await api('/onebot');
+  if (res.status === 503) {
+    $('ob-msg').textContent = '这台服务器没有启用 OneBot 群招募功能。';
+    $('ob-status').textContent = '—';
+    renderOnebotStatus(null);
+    return;
+  }
+  if (res.status !== 200) { $('ob-msg').textContent = '读取 OneBot 配置失败：' + ((res.body && res.body.error) || res.status); return; }
+  const { config, status } = res.body;
+  $('ob-enabled').checked = !!config.enabled;
+  $('ob-mode').value = config.mode === 'server' ? 'server' : 'client';
+  renderOnebotMode(config.mode === 'server' ? 'server' : 'client');
+  $('ob-url').value = config.url || '';
+  $('ob-token').value = '';
+  $('ob-token-hint').textContent = config.tokenSet ? '已设置' : '未设置';
+  $('ob-groups').value = (config.groups || []).join('\n');
+  $('ob-template').value = config.template || '';
+  $('ob-link-base').value = config.linkBase || '';
+  $('ob-cooldown').value = config.cooldownSec ?? 60;
+  $('ob-msg').textContent = '';
+  renderOnebotStatus(status);
+}
+
+/** Save the form (token only when typed) and refresh the status; server errors come back as Chinese text. */
+$('btn-ob-save').addEventListener('click', async () => {
+  const msg = $('ob-msg');
+  const body = {
+    enabled: $('ob-enabled').checked,
+    mode: $('ob-mode').value,
+    url: $('ob-url').value.trim(),
+    groups: parseGroups(),
+    template: $('ob-template').value,
+    linkBase: $('ob-link-base').value.trim(),
+    cooldownSec: Number($('ob-cooldown').value) || 0,
+  };
+  const token = $('ob-token').value;
+  if (token) body.token = token;
+  const btn = $('btn-ob-save');
+  btn.disabled = true;
+  const res = await api('/onebot/config', { body });
+  btn.disabled = false;
+  if (res.status !== 200) { msg.textContent = '保存失败：' + ((res.body && res.body.error) || res.status); return; }
+  msg.textContent = '已保存并应用到运行中的服务器。';
+  await loadOnebot();
+});
+
+$('ob-mode').addEventListener('change', () => renderOnebotMode($('ob-mode').value));
+
+$('btn-ob-reconnect').addEventListener('click', async () => {
+  const res = await api('/onebot/reconnect', { body: {} });
+  $('ob-msg').textContent = res.status === 200
+    ? ($('ob-mode').value === 'server' ? '已断开现有连接，OneBot 会用新配置重新连入。' : '已按当前配置重新连接。')
+    : '重连失败：' + ((res.body && res.body.error) || res.status);
+  setTimeout(loadOnebot, 800);
+});
+
+$('btn-ob-test').addEventListener('click', async () => {
+  const res = await api('/onebot/test', { body: {} });
+  if (res.status === 200) $('ob-msg').textContent = `测试消息已发送（${res.body.sent}/${res.body.total} 个群成功）。`;
+  else $('ob-msg').textContent = '测试失败：' + ((res.body && res.body.error) || res.status) + (res.body && res.body.failed ? ` ${res.body.failed.map((f) => f.group + ': ' + f.error).join('; ')}` : '');
+  await loadOnebot();
+});
+
+$('btn-ob-clear-token').addEventListener('click', async () => {
+  if (!confirm('清除已保存的 OneBot Access Token？\n\n未设置 Token 的 OneBot 实现仍可连接（取决于其配置）。')) return;
+  const res = await api('/onebot/config', { body: { token: '' } });
+  $('ob-msg').textContent = res.status === 200 ? '已清除 Token。' : '清除失败：' + ((res.body && res.body.error) || res.status);
+  await loadOnebot();
+});
+
+// ---- operators (the console's own operator accounts, owner only) ------------------------------------------
+// Creating an account hands out console access, so these endpoints answer 403 for a non-owner identity and the
+// section is hidden. The server owns the rules; the console only asks and reports.
+
+function renderOperators(result) {
+  const body = $('operators-body');
+  body.textContent = '';
+  const list = (result && result.accounts) || [];
+  text('operators-count', (result && result.total) || 0);
+  show('operators-empty', list.length === 0);
+  for (const op of list) {
+    const tr = document.createElement('tr');
+    const cell = (value, cls) => { const td = document.createElement('td'); td.textContent = value == null ? '—' : String(value); if (cls) td.className = cls; return td; };
+    tr.append(
+      cell(op.id, 'mono'),
+      cell(op.name),
+      cell(op.createdAt ? new Date(op.createdAt).toLocaleString('zh-CN') : '—'),
+      cell(op.lastLoginAt ? new Date(op.lastLoginAt).toLocaleString('zh-CN') : '从未登录'),
+      cell(op.disabled ? '已停用' : '正常', op.disabled ? 'state-frozen' : 'state-live'),
+    );
+    const td = document.createElement('td');
+    td.className = 'acct-actions';
+    const add = (label, cls, handler) => {
+      const btn = document.createElement('button');
+      btn.className = 'btn ' + cls;
+      btn.textContent = label;
+      btn.addEventListener('click', handler);
+      td.append(btn);
+      return btn;
+    };
+    add('重置密码', 'btn--ghost', async () => {
+      const password = prompt(`为运维账号 ${op.id} 设置新密码（至少 8 位）。\n\n该账号在所有设备上都要重新登录。`);
+      if (password == null) return;
+      if ([...password].length < 8) { alert('密码至少 8 位。'); return; }
+      const res = await api('/operators/password', { body: { id: op.id, password } });
+      if (res.status !== 200) alert('重置失败：' + ((res.body && res.body.error) || res.status));
+      else alert('已重置 ' + op.id + ' 的密码。');
+      await loadOperators();
+    });
+    add(op.disabled ? '恢复' : '停用', op.disabled ? 'btn--ghost' : 'btn--warn', async () => {
+      if (!op.disabled && !confirm(`停用运维账号 ${op.id}？\n\n· 该账号无法登录\n· 已登录的会话立即失效`)) return;
+      const res = await api('/operators/disabled', { body: { id: op.id, disabled: !op.disabled } });
+      if (res.status !== 200) alert('操作失败：' + ((res.body && res.body.error) || res.status));
+      await loadOperators();
+    });
+    add('删除', 'btn--danger', async () => {
+      if (!confirm(`确定删除运维账号 ${op.id}？\n\n此操作不可恢复：该账号的登录凭据全部清除，ID 会被释放。`)) return;
+      const again = prompt('为确认，请再输入一次账号 ID：');
+      if (again !== op.id) { alert('ID 不匹配，未删除。'); return; }
+      const res = await api('/operators/delete', { body: { id: op.id } });
+      if (res.status !== 200) alert('删除失败：' + ((res.body && res.body.error) || res.status));
+      else alert('已删除 ' + op.id + '。');
+      await loadOperators();
+    });
+    tr.append(td);
+    body.append(tr);
+  }
+}
+
+/** Ask the server for the operator accounts. */
+async function loadOperators() {
+  if (!state.identity || state.identity.kind !== 'owner') return;
+  const res = await api('/operators');
+  if (res.status === 503) {
+    text('operators-count', 0);
+    show('operators-empty', true);
+    $('operators-empty').textContent = '这台服务器没有启用运维账号功能。';
+    return;
+  }
+  if (res.status === 403) { $('operators-panel').hidden = true; return; }
+  if (res.status !== 200) { alert('读取运维账号失败：' + ((res.body && res.body.error) || res.status)); return; }
+  renderOperators(res.body);
+}
+
 // ---- logs -------------------------------------------------------------------------------------------------
 function appendLogs(entries) {
   const box = $('logs');
@@ -316,7 +560,10 @@ async function poll() {
     const ov = await api('/overview');
     if (ov.status === 404) { setState('后台未启用', 'badge--off'); screen('disabled'); return; }
     if (ov.status === 401 || ov.status === 0 && !state.running) { setState(ov.status === 0 ? '连接中断' : '需要验证', 'badge--off'); screen('login'); return; }
-    if (ov.status === 200 && ov.body) { state.running = true; screen('dashboard'); renderOverview(ov.body); setState('运行中', 'badge'); }
+    if (ov.status === 200 && ov.body) {
+      state.running = true; screen('dashboard'); renderOverview(ov.body); setState('运行中', 'badge');
+      await loadSession();
+    }
     else setState('连接中断', 'badge--off');
 
     const rooms = await api('/rooms');
@@ -343,23 +590,34 @@ $('login-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const err = $('login-error');
   err.hidden = true;
-  const res = await api('/login', { method: 'POST', body: { secret: $('login-secret').value } });
+  // 账号 + 密码（运维账号）或留空账号直接用主密钥；两者共用同一个登录接口。
+  // 两个字段都发：账号登录读 password，主密钥登录读 secret（服务端按有无账号 ID 二选一）。
+  const id = $('login-id').value.trim();
+  const credential = $('login-secret').value;
+  const res = await api('/login', { method: 'POST', body: { id, password: credential, secret: credential } });
   if (res.status === 200) {
     $('login-secret').value = '';
+    renderIdentity(res.body && res.body.identity ? res.body.identity : null);
     await poll();
     startPolling();
     return;
   }
   err.textContent = res.status === 429
     ? '尝试次数过多，请稍后重试。'
-    : res.status === 0 ? '无法连接服务器。' : '密钥无效。';
+    : res.status === 503 ? '这台服务器没有启用运维账号功能。'
+      : res.status === 0 ? '无法连接服务器。'
+        : id ? '账号 ID 或密码错误。' : '密钥无效。';
   err.hidden = false;
 });
 
 $('btn-logout').addEventListener('click', async () => {
   await api('/logout', { method: 'POST', body: {} });
   state.running = false;
+  state.identity = null;
+  state.editing = null;
   if (state.timer) { clearInterval(state.timer); state.timer = null; }
+  renderIdentity(null);
+  resetAnnouncementForm();
   setState('已退出', 'badge--off');
   screen('login');
 });
@@ -395,31 +653,61 @@ $('btn-ann-publish').addEventListener('click', async () => {
   const msg = $('ann-msg');
   const title = $('ann-title').value.trim();
   const markdown = $('ann-body').value;
-  const id = $('ann-id').value.trim();
+  const editing = state.editing;
+  const id = editing || $('ann-id').value.trim();
   if (!title) { msg.textContent = '标题不能为空。'; return; }
   if (!markdown.trim()) { msg.textContent = '正文不能为空。'; return; }
-  if (id && !/^[a-z0-9_-]{1,64}$/.test(id)) { msg.textContent = 'ID 只能用小写字母、数字、下划线和连字符（1–64 位）。'; return; }
-  const pin = $('ann-pin').checked;
-  if (pin && !confirm('发布并置顶？\n\n会取消当前的置顶公告，玩家进站将自动打开这一条。')) return;
+  if (!editing && id && !/^[a-z0-9_-]{1,64}$/.test(id)) { msg.textContent = 'ID 只能用小写字母、数字、下划线和连字符（1–64 位）。'; return; }
   const btn = $('btn-ann-publish');
   btn.disabled = true;
-  const res = await api('/announcements/publish', { body: { id: id || undefined, title, markdown, pin } });
+  if (!editing && $('ann-pin').checked && !confirm('发布并置顶？\n\n会取消当前的置顶公告，玩家进站将自动打开这一条。')) { btn.disabled = false; return; }
+  // 修改已有公告：编号不变，只换标题与正文；发布新公告才需要 ID 与置顶。
+  const res = editing
+    ? await api('/announcements/update', { body: { id, title, markdown } })
+    : await api('/announcements/publish', { body: { id: id || undefined, title, markdown, pin: $('ann-pin').checked } });
   btn.disabled = false;
-  if (res.status !== 200) { msg.textContent = '发布失败：' + ((res.body && res.body.error) || res.status); return; }
-  msg.textContent = '已发布：' + res.body.item.id;
-  $('ann-id').value = res.body.item.id;
-  $('ann-title').value = '';
-  $('ann-body').value = '';
-  $('ann-pin').checked = false;
+  if (res.status !== 200) {
+    msg.textContent = (editing ? '修改失败：' : '发布失败：') + ((res.body && res.body.error) || res.status);
+    return;
+  }
+  msg.textContent = editing ? `已修改公告 ${id}（编号与发布时间不变）。` : '已发布：' + res.body.item.id;
+  if (editing) resetAnnouncementForm();
+  else {
+    $('ann-id').value = res.body.item.id;
+    $('ann-title').value = '';
+    $('ann-body').value = '';
+    $('ann-pin').checked = false;
+  }
   await loadAnnouncements();
 });
 
-$('btn-ann-clear').addEventListener('click', () => {
-  $('ann-id').value = '';
-  $('ann-title').value = '';
-  $('ann-body').value = '';
-  $('ann-pin').checked = false;
-  $('ann-msg').textContent = '';
+$('btn-ann-clear').addEventListener('click', resetAnnouncementForm);
+
+// ---- operator account actions (owner only) -----------------------------------------------------------------
+$('btn-op-create').addEventListener('click', async () => {
+  const msg = $('op-msg');
+  const id = $('op-id').value.trim();
+  const name = $('op-name').value.trim();
+  const password = $('op-password').value;
+  if (!/^[a-z0-9][a-z0-9_-]{2,31}$/.test(id)) { msg.textContent = '账号 ID 只能用小写字母、数字、下划线和连字符（3–32 位，且以小写字母或数字开头）。'; return; }
+  if ([...password].length < 8) { msg.textContent = '密码至少 8 位。'; return; }
+  const res = await api('/operators/create', { body: { id, name, password } });
+  if (res.status !== 200) {
+    msg.textContent = '创建失败：' + (res.body && res.body.error === 'ID_TAKEN' ? '该 ID 已存在' : (res.body && res.body.error) || res.status);
+    return;
+  }
+  msg.textContent = `已创建运维账号 ${id}，现在就能用它登录了。`;
+  $('op-id').value = '';
+  $('op-name').value = '';
+  $('op-password').value = '';
+  await loadOperators();
+});
+
+$('btn-op-clear').addEventListener('click', () => {
+  $('op-id').value = '';
+  $('op-name').value = '';
+  $('op-password').value = '';
+  $('op-msg').textContent = '';
 });
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
@@ -433,7 +721,9 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
   screen('dashboard');
   renderOverview(first.body);
   setState('运行中', 'badge');
+  await loadSession();
   loadAccounts();
   loadAnnouncements();
+  loadOnebot();
   startPolling();
 })();

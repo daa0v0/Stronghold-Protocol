@@ -339,3 +339,14 @@
 - 这是对 D023、D025 目录分发边界和 D016 固定默认预算的后续修订；禁止自动目录下载和对局期间暂停批量素材操作的边界保留。
 - 原因：用户确认不能接受“没有目录就不能在线下载”的过度限制，同时希望恢复默认无限制并保留服主按需恢复 8/4 Mbps 预算的能力。
 - 依据：[本次任务记录](records/2026-10-12-01-asset-admission-limit-mlyss.md)、[素材预缓存说明](../ASSET_CACHE.md)、[服主配置](../SERVER_SETTINGS.md)。
+
+## D032
+
+**生效：群招募经 OneBot 11 WebSocket 发送，正向（本服作客户端）与反向（OneBot 连入本服 `/onebot/ws`）由后台自选；目标群与模板由运维后台配置，房内「招募」按钮触发。**
+
+- 正向：本服作为 WS 客户端拨号 OneBot 实现（NapCat / Lagrange.OneBot / go-cqhttp 等）的 `ws(s)://` 地址，断线按 1s 倍增至 30s 重连。反向：本服在自己端口上开放 `/onebot/ws`，OneBot 实现连入；握手 Token 走 `Authorization: Bearer` 头或 `?access_token=`，**失败关闭**——未配置 Token 时启用被拒绝、路径 404，Token 不对回 401；同一时刻只接受一个 OneBot 连接（新连接替换旧连接）。
+- 两种模式都仅发送 `send_group_msg`（文本消息段，不解释 CQ 码），不消费 OneBot 事件。
+- 配置持久化于 `runtime/onebot.json`（0600）：启用、模式、地址（仅正向）、Token、目标群（≤10 个）、模板、链接基址、冷却（默认 60 秒，0–3600）。后台保存即应用并刷新房间标志；Token 永不回显，只回 `tokenSet`。
+- 同盟等待房（含观战席）的在线真人可点「招募」；模板占位符 `{room} {host} {players} {capacity} {difficulty} {mode} {link}`，未知占位符原样保留；`{link}` = `链接基址/?room=房间密钥`（QQ 里点击直接进房），基址未配置时渲染为空。同一房间按冷却拒绝（RATE），全部发送失败时不吃冷却并返回 ONEBOT_UNAVAILABLE。独立模拟、对局中与紧急保护期间不可招募；未配置时 room.state 不带 `recruit`，房间不显示按钮。
+- 原因：用户要求在房间内一键向管理后台指定的 QQ 群发送招募信息、模板与目标群后台可配；其后补充——其 OneBot 所在机器无公网、游戏服有公网，故连接方式需可自选（反向 WS），且招募信息需带可点击的直接加入链接。
+- 依据：[DEV-20261024-01](records/2026-10-24-01-onebot-recruit.md)、[运维后台说明](../ADMIN.md)；入口 `server/onebot.js`、`server/lobby.js`（`room.recruit`）、`server/admin.js`，测试 `test/onebot.test.js`。

@@ -29,7 +29,7 @@ const V1_EXTENSIONS = Object.freeze({
 // The 0.3.1 baseline adds further post-v1 types (rehearsal, m.layer, offers, test-mode and room setup commands); they
 // join the same JSON fallback rather than renumbering the frozen v1 catalog, so the corpus hash and fingerprint hold.
 const V1_JSON_FALLBACK = Object.freeze({
-  c2s: ['room.chat', 'room.lobbyChat', 'room.skins', 'b.rehearsalResult', 'g.offer', 'g.offerRefresh', 'g.test',
+  c2s: ['room.chat', 'room.lobbyChat', 'room.recruit', 'room.skins', 'b.rehearsalResult', 'g.offer', 'g.offerRefresh', 'g.test',
     'g.unequip', 'room.consent', 'room.contentReady', 'room.setMode', 'room.setPlugins', 'g.takeoverVote', 'g.control'],
   s2c: ['m.chat', 'm.chatState', 'm.emergency', 'b.rehearsal', 'b.rehearsalCancel', 'm.layer', 'm.control'],
 });

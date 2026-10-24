@@ -49,17 +49,18 @@ export function narrowDeflateOffer(header) {
  * @param {{ MatchClass?: Function, seedFn?: () => number, [option: string]: any }} opts startServer() options
  * @param {{ data: object, log: object, content?: { cs: string } | null,
  *   plugins?: ReturnType<typeof import('../plugins/roomSets.js').createRoomSets> | null,
- *   hosts?: ReturnType<typeof import('../match/host/index.js').createMatchHosts> | null }} deps the game data the lobby's
+ *   hosts?: ReturnType<typeof import('../match/host/index.js').createMatchHosts> | null,
+ *   onebot?: ReturnType<typeof import('../onebot.js').createOneBotClient> | null }} deps the game data the lobby's
  *   matches use, the logger, the vanilla content (server/plugins/identity.js: welcome / room.state content, BattleSpec
  *   cs), the room sets a room's host chooses from (room.setPlugins: visual and content sets), the match hosts a room with
- *   gameplay plugins plays in (DESIGN §32.6)
+ *   gameplay plugins plays in (DESIGN §32.6), the OneBot 群招募 client (server/onebot.js)
  * @returns {{ registry: SessionRegistry, lobby: Lobby, network: Network }}
  */
-export function createSessionStack(opts, { data, log, content = null, plugins = null, hosts = null }) {
+export function createSessionStack(opts, { data, log, content = null, plugins = null, hosts = null, onebot = null }) {
   const netOptions = netOptionsFrom(opts);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
   const lobbyOptions = lobbyOptionsFrom(opts);
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, options: lobbyOptions });
+  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, onebot, options: lobbyOptions });
   const network = new Network({ registry, handler: lobby, log, options: netOptions, accounts: opts.accounts || null });
   return { registry, lobby, network };
 }
@@ -86,10 +87,13 @@ function meterSocket(ws, req, traffic) {
 /**
  * Serve the WebSocket endpoint /ws on `server` (its 'upgrade' event).
  * @param {import('node:http').Server} server
- * @param {{ network: Network, log: object, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter> }} deps
+ * @param {{ network: Network, log: object, traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
+ *   extraUpgrade?: (req: any, parts: { rawPath: string, query: string } | null, socket: any, head: any) => boolean }} deps
+ *   extraUpgrade: another WS endpoint on this server's port (server/onebot.js reverse mode, /onebot/ws): called first;
+ *   when it returns true the request was answered and /ws logic skips.
  * @returns {WebSocketServer}
  */
-export function attachWebSocket(server, { network, log, traffic = null }) {
+export function attachWebSocket(server, { network, log, traffic = null, extraUpgrade = null }) {
   const compression = process.env.SP_WS_DEFLATE === '0' ? false : { ...WS_DEFLATE };
   const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, perMessageDeflate: compression, clientTracking: false });
   wss.on('connection', (ws, req) => {
@@ -101,6 +105,7 @@ export function attachWebSocket(server, { network, log, traffic = null }) {
   server.on('upgrade', (req, socket, head) => {
     socket.on('error', () => {});
     const parts = splitUrl(req.url || '/');
+    if (extraUpgrade && extraUpgrade(req, parts, socket, head)) return;
     const reject = (status, text) => {
       try { socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); } catch { socket.destroy(); }
     };

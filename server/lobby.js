@@ -172,6 +172,7 @@ import { KITTED_CHARS } from './sim/content/kits/index.js';
 import { LobbyDiscovery } from './lobbyDiscovery.js';
 import { assetCacheReadinessMatches } from '../shared/assetCache.js';
 import { MatchChat } from './matchChat.js';
+import { renderRecruitTemplate, recruitFacts } from './onebot.js';
 
 const VANILLA_KITTED = new Set(KITTED_CHARS);
 import { isContentHash } from '../shared/plugins/identity.js';
@@ -317,6 +318,15 @@ export class Room {
     this.createdAt = now;
     this.disposed = false;
     /**
+     * OneBot 群招募 (docs/ADMIN.md §4.4): `{ cooldownSec }` when the server's lobby has a configured OneBot target and
+     * this is a co-op room — the client's 招募 button rides on it —, null when the feature is unavailable here. The
+     * lobby (create / refreshRecruitFlags) owns the value; the per-room cooldown lives in `recruitAt`.
+     * @type {{ cooldownSec: number } | null}
+     */
+    this.recruit = null;
+    /** The last time this room's recruit message went out (Lobby.now), 0 = never. */
+    this.recruitAt = 0;
+    /**
      * The content set the room plays (DESIGN §32): `{ cs, vanilla, plugins }` — the server's vanilla set, or with the
      * cosmetic plugins its host switched on (header "The room's plugins": `vs`, `warnings`, `bytes` beside them), or a
      * content set with gameplay plugins (header "Gameplay plugins": `vanilla: false`, its own cs, `dataBytes`, `modes`,
@@ -374,6 +384,8 @@ export class Room {
         : null)),
       spectators: this.spectators.map((s) => ({ playerId: s.playerId, name: s.name, connected: s.connected, ...(this.modded ? { content: s.content || 'loading' } : {}) })),
       ...(this.content ? { content: this.content.trusted ? {...this.content, trusted:{...this.content.trusted, consent:Object.fromEntries(this.seats.filter(x => x && !x.isBot).map(x => [x.seat,x.consentCs === this.content.cs]))}} : this.content } : {}),
+      // OneBot 群招募 (docs/ADMIN.md §4.4): present only when the server offers the feature to this room
+      ...(this.recruit ? { recruit: this.recruit } : {}),
       // omitted when false so a normal room.state stays identical
       ...(this.test ? { test: true } : {}),
     };
@@ -397,14 +409,16 @@ export class Lobby {
    *     unofficial?: () => number, hasNotices?: () => boolean, defaults?: () => string[], dataOf?: (cs: string) => any, kittedOf?: (cs: string) => any,
    *     contentInUse?: () => number } | null,
    *   hosts?: { create: (cs: string, opts: object) => any, stats?: () => object } | null,
+   *   onebot?: { recruitConfig?: () => { cooldownSec: number } | null, broadcast?: (text: string) => Promise<any> } | null,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    *   content: the server's vanilla content (server/plugins/identity.js; header "Content identity"); plugins: what a host
    *   chooses from — the room's sets (server/plugins/roomSets.js: visual sets and content sets; header "The room's
    *   plugins", "Gameplay plugins"); hosts: the match hosts a room with gameplay plugins runs its match in
-   *   (server/match/host/index.js; none: such a match runs here, unit tests)
+   *   (server/match/host/index.js; none: such a match runs here, unit tests); onebot: the OneBot 群招募 client
+   *   (server/onebot.js; none: room.recruit is refused with ONEBOT_UNAVAILABLE and room.state carries no recruit flag)
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, plugins = null, hosts = null, options = {} }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, content = null, plugins = null, hosts = null, onebot = null, options = {} }) {
     this.registry = registry;
     /** the vanilla content set every room plays (header "Content identity"), or null */
     this.vanilla = content && isContentHash(content.cs) ? Object.freeze({ cs: content.cs, vanilla: true, plugins: Object.freeze([]) }) : null;
@@ -412,6 +426,8 @@ export class Lobby {
     this.plugins = plugins;
     /** the match hosts (header "Gameplay plugins"), or null */
     this.hosts = hosts;
+    /** the OneBot 群招募 client (server/onebot.js), or null */
+    this.onebot = onebot;
     this.log = log;
     this.MatchClass = MatchClass;
     this.getData = getData;
@@ -718,7 +734,7 @@ export class Lobby {
    */
   handleMessage(session, msg, ctx = null) {
     if (this.emergency.active && (['lobby.quickMatch', 'room.create', 'room.start', 'room.rerollSetup',
-      'room.cancelReroll', 'room.loadout', 'room.ownership', 'room.diy', 'room.chat', 'room.lobbyChat'].includes(msg.t)
+      'room.cancelReroll', 'room.loadout', 'room.ownership', 'room.diy', 'room.chat', 'room.lobbyChat', 'room.recruit'].includes(msg.t)
       || (msg.t === 'lobby.watch' && msg.on))) return fail(ERR.SERVER_EMERGENCY);
     switch (msg.t) {
       case 'lobby.watch': return this.discovery.watch(session, msg);
@@ -749,6 +765,7 @@ export class Lobby {
       case 'room.consent': return this.consent(session,msg);
       case 'room.chat': return this.chat(session, msg);
       case 'room.lobbyChat': return this.lobbyChat(session, msg);
+      case 'room.recruit': return this.recruit(session);
       default:
         if (typeof msg.t === 'string' && msg.t.startsWith('g.')) return this.routeGameNow(session, msg);
         return fail(ERR.BAD_MSG, `unhandled type ${String(msg.t).slice(0, 32)}`);
@@ -855,6 +872,7 @@ export class Lobby {
       else { room.content = r.content; this.holdContent(r.content); }
     }
     room.ownerKey = key;
+    room.recruit = mode === 'solo' ? null : this.recruitState();
     room.seats[0] = this.humanSeat(0, session);
     room.hostId = session.playerId;
     this.rooms.set(code, room);
@@ -1875,6 +1893,60 @@ export class Lobby {
   sendLobbyChatState(room, playerId) {
     if (room.match || room.lobbyChat.closed || room.replay) return;
     this.sendToPlayer(room, playerId, room.lobbyChat.snapshot());
+  }
+
+  // ---- OneBot 群招募 (docs/ADMIN.md §4.4) ------------------------------------------------------------
+  //
+  // A human of a co-op waiting room (a player seat or a spectator seat) asks the server to push the operator's
+  // recruit template — rendered with this room's facts — to the configured QQ group(s). The server owns everything:
+  // the template and target groups (runtime/onebot.json, edited in the 运维后台), the per-room cooldown
+  // (room.recruitAt, enforced before anything is sent) and the availability (room.state.recruit, ONEBOT_UNAVAILABLE).
+
+  /** The room.state `recruit` flag of this lobby, or null when its OneBot client offers nothing. */
+  recruitState() {
+    return this.onebot?.recruitConfig?.() || null;
+  }
+
+  /** Apply the OneBot config to every room (the console saved): rooms whose flag changed re-broadcast room.state. */
+  refreshRecruitFlags() {
+    const next = this.recruitState();
+    for (const room of this.rooms.values()) {
+      if (room.disposed) continue;
+      const value = room.mode === 'solo' ? null : next;
+      const changed = (value === null) !== (room.recruit === null)
+        || (value && room.recruit && value.cooldownSec !== room.recruit.cooldownSec);
+      room.recruit = value;
+      if (changed && !room.match) this.broadcastState(room);
+    }
+  }
+
+  /**
+   * room.recruit {}: push this room's recruit message through the OneBot client. Answered once the send settled, so a
+   * failed push reports ONEBOT_UNAVAILABLE instead of a silent nothing. The cooldown is taken before the send: two
+   * rapid taps (or two players at once) cannot double-send; a total failure (nothing went out) gives the room back.
+   * @param {import('./net.js').Session} session
+   */
+  async recruit(session) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.mode === 'solo') return fail(ERR.WRONG_PHASE, 'a solo room cannot recruit');
+    if (room.match) return fail(ERR.WRONG_PHASE, 'the match has started');
+    const seat = room.seatOf(session.playerId);
+    const member = seat || room.spectatorOf(session.playerId);
+    if (!session.connected || this.registry.byId(session.playerId) !== session || !member || member.left
+      || !member.connected || (seat && seat.isBot)) return fail(ERR.NOT_IN_ROOM);
+    const conf = this.onebot?.recruitConfig?.();
+    if (!conf) return fail(ERR.ONEBOT_UNAVAILABLE);
+    const now = this.now();
+    const readyAt = room.recruitAt + conf.cooldownSec * 1000;
+    if (readyAt > now) return fail(ERR.RATE, `recruit cooldown ${Math.ceil((readyAt - now) / 1000)}s`);
+    room.recruitAt = now;
+    const text = renderRecruitTemplate(this.onebot.recruitTemplate?.() || '', recruitFacts(room, this.onebot.recruitLinkBase?.() || ''));
+    const res = await this.onebot.broadcast(text).catch((e) => ({ ok: false, sent: 0, failed: [{ group: '', error: String(e?.message || e) }] }));
+    const failures = (res.failed || []).map((f) => `${f.group || '?'}: ${f.error}`).join('; ');
+    this.log.info(`[lobby] ${room.code} recruit by ${session.name}: ${res.sent}/${res.total} group(s)${failures ? ` (failed: ${failures})` : ''}`);
+    if (!res.sent) return fail(ERR.ONEBOT_UNAVAILABLE, failures || 'no group configured');
+    return OK;
   }
 
   /** Call an optional match hook without letting it throw. onLeave falls back to onDisconnect. */

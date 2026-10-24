@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Ordinary announcement administration. UTF-8 Markdown input is explicit; no HTTP write endpoint is exposed.
-// node tools/announcements.mjs publish --title <title> --file <body.md> [--id <id>] [--pin] [--dir <dir>]
+// node tools/announcements.mjs publish --title <title> --file <body.md> [--id <id>] [--author <operator>] [--pin] [--dir <dir>]
+// node tools/announcements.mjs update <id> --title <title> --file <body.md> [--dir <dir>]
 // node tools/announcements.mjs list [--json] [--dir <dir>]
 // node tools/announcements.mjs pin <id> [--dir <dir>]
 // node tools/announcements.mjs unpin [--dir <dir>]
@@ -14,7 +15,8 @@ import { createAnnouncementStore, readAnnouncementMarkdown } from '../server/ann
 import { enqueueAnnouncementNotice } from '../server/announcementNotices.js';
 
 const USAGE = `公告管理（正文与输出均为 UTF-8）：
-  node tools/announcements.mjs publish --title <标题> --file <正文.md> [--id <ID>] [--pin] [--dir <目录>]
+  node tools/announcements.mjs publish --title <标题> --file <正文.md> [--id <ID>] [--author <运维账号>] [--pin] [--dir <目录>]
+  node tools/announcements.mjs update <ID> --title <标题> --file <正文.md> [--dir <目录>]   修改已发布公告的标题与正文
   node tools/announcements.mjs list [--json] [--dir <目录>]
   node tools/announcements.mjs pin <ID> [--dir <目录>]
   node tools/announcements.mjs unpin [--dir <目录>]
@@ -24,19 +26,20 @@ const USAGE = `公告管理（正文与输出均为 UTF-8）：
 function parseArgs(argv) {
   const [command, ...rest] = argv;
   if (!command || command === '--help' || command === '-h') return { command: 'help' };
-  if (!['publish', 'list', 'pin', 'unpin', 'notify'].includes(command)) throw new Error(`未知命令 ${command}`);
-  const options = { command, dir: undefined, title: undefined, file: undefined, id: undefined, pin: false, json: false };
+  if (!['publish', 'update', 'list', 'pin', 'unpin', 'notify'].includes(command)) throw new Error(`未知命令 ${command}`);
+  const options = { command, dir: undefined, title: undefined, file: undefined, id: undefined, author: undefined, pin: false, json: false };
   const seen = new Set();
   for (let i = 0; i < rest.length; i++) {
     const value = rest[i];
     if (!value.startsWith('--')) {
-      if (!['pin', 'notify'].includes(command) || options.id) throw new Error(`不支持的参数 ${value}`);
+      if (!['pin', 'notify', 'update'].includes(command) || options.id) throw new Error(`不支持的参数 ${value}`);
       options.id = value;
       continue;
     }
     if (seen.has(value)) throw new Error(`参数 ${value} 重复`);
     seen.add(value);
-    if (value === '--dir' || (command === 'publish' && ['--title', '--file', '--id'].includes(value))) {
+    if (value === '--dir' || (command === 'publish' && ['--title', '--file', '--id', '--author'].includes(value))
+      || (command === 'update' && ['--title', '--file'].includes(value))) {
       const next = rest[++i];
       if (!next || next.startsWith('--')) throw new Error(`参数 ${value} 缺少值`);
       options[value.slice(2)] = next;
@@ -45,6 +48,7 @@ function parseArgs(argv) {
     else throw new Error(`不支持的参数 ${value}`);
   }
   if (command === 'publish' && (!options.title || !options.file)) throw new Error('发布需要 --title 和显式指定的 --file <正文.md>');
+  if (command === 'update' && (!options.id || !options.title || !options.file)) throw new Error('修改需要指定公告 ID，以及 --title 和 --file <正文.md>');
   if (command === 'pin' && !options.id) throw new Error('置顶需要指定公告 ID');
   if (command === 'notify' && !options.id) throw new Error('发送通知需要指定公告 ID');
   return options;
@@ -74,13 +78,17 @@ export async function main(argv) {
       const index = store.list();
       if (options.json) writeUtf8(process.stdout, JSON.stringify(index, null, 2));
       else if (!index.items.length) writeUtf8(process.stdout, '当前没有公告。');
-      else for (const item of index.items) writeUtf8(process.stdout, `${item.id === index.pinnedId ? '[置顶] ' : ''}${item.id}\t${item.publishedAt}\t${item.title}`);
+      else for (const item of index.items) writeUtf8(process.stdout, `${item.id === index.pinnedId ? '[置顶] ' : ''}${item.id}\t${item.publishedAt}\t${item.author || '-'}\t${item.title}`);
       return 0;
     }
     if (options.command === 'publish') {
       const markdown = readAnnouncementMarkdown(path.resolve(options.file));
-      const item = store.publish({ id: options.id, title: options.title, markdown, pin: options.pin });
+      const item = store.publish({ id: options.id, title: options.title, markdown, pin: options.pin, author: options.author ?? null });
       writeUtf8(process.stdout, `已发布公告 ${item.id}${options.pin ? '，并设为唯一置顶' : ''}。`);
+    } else if (options.command === 'update') {
+      const markdown = readAnnouncementMarkdown(path.resolve(options.file));
+      const item = store.update(options.id, { title: options.title, markdown });
+      writeUtf8(process.stdout, `已修改公告 ${item.id}（编号、发布时间与历史位置不变）。`);
     } else if (options.command === 'notify') {
       await enqueueAnnouncementNotice({ store, id: options.id, log });
       writeUtf8(process.stdout, '已提交发送命令，运行中的服务器将在约1秒内通知在线玩家。');

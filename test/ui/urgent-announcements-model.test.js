@@ -14,7 +14,7 @@ const frameOf = (number = 1, id = 'a', createdAt = NOW) => ({
   createdAt, expiresAt: createdAt + ANNOUNCEMENT_NOTICE_TTL_MS,
 });
 const detailOf = (frame, markdown = '# 紧急公告\n\n请阅读并确认。') => ({
-  id: frame.id, revision: frame.revision, title: `公告 ${frame.id}`, publishedAt: DATE, markdown,
+  id: frame.id, revision: frame.revision, title: `公告 ${frame.id}`, publishedAt: DATE, author: null, markdown,
 });
 const responseOf = (payload, ok = true) => ({ ok, json: async () => payload });
 const ticks = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };

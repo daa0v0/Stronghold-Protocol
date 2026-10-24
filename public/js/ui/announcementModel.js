@@ -84,7 +84,8 @@ export function createAnnouncementController({ target, getContext, fetchImpl = g
       const detail = await readJson(`/api/announcements/${encodeURIComponent(id)}`);
       const valid = readAnnouncementIndex({ revision: detail?.revision, pinnedId: null, items: [detail] });
       if (!valid || detail.id !== item.id || detail.revision !== item.revision || detail.title !== item.title
-        || detail.publishedAt !== item.publishedAt || typeof detail.markdown !== 'string'
+        || detail.publishedAt !== item.publishedAt || (detail.author ?? null) !== (item.author ?? null)
+        || typeof detail.markdown !== 'string'
         || detail.markdown.length > ANNOUNCEMENT_MAX_BODY_CHARS) throw new Error('Invalid announcement detail');
       if (!liveIntent(version) || request !== detailRequest || !target.get().open || target.get().selectedId !== id) return target.get();
       const clean = { ...valid.items[0], markdown: detail.markdown };

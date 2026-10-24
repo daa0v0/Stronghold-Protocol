@@ -8,7 +8,10 @@
 node tools/announcements.mjs publish --id welcome --title "开服公告" --file ./notice.md
 --pin
 
-# 查看编号和发布时间
+# 修改已发布公告的标题与正文（编号、发布时间、历史位置都不变）
+node tools/announcements.mjs update welcome --title "开服公告（已更新）" --file ./notice2.md
+
+# 查看编号、发布时间和发布者
 node tools/announcements.mjs list
 
 # 更改置顶或取消置顶，pin后面是编号
@@ -47,7 +50,10 @@ node tools/announcements.mjs unpin
 # 发布；--pin 同时置顶。省略 --id 会自动生成公告编号
 node tools/announcements.mjs publish --id welcome --title "开服公告" --file runtime/welcome.md --pin
 
-# 查看编号和发布时间
+# 修改已发布公告的标题与正文（编号、发布时间与历史位置不变）
+node tools/announcements.mjs update welcome --title "开服公告（已更新）" --file runtime/welcome-2.md
+
+# 查看编号、发布时间和发布者
 node tools/announcements.mjs list
 
 # 更改置顶或取消置顶
@@ -58,7 +64,11 @@ node tools/announcements.mjs unpin
 node tools/announcements.mjs notify maintenance
 ```
 
-每个编号只发布一次；修正公告时用新编号发布，保留历史并产生新的提醒版本。请使用工具发布，不手工修改已发布的正文或索引；完整性检查会拒绝未登记的修改。
+每个编号只发布一次：`publish` 拒绝重复编号，修正内容用 `update`（同一条公告换标题和正文，编号、发布时间、历史位置都不变，revision 会变，玩家端随即取到新正文）。请使用工具发布或修改，不手工修改已发布的正文或索引；完整性检查会拒绝未登记的修改。
+
+## 发布者
+
+公告元数据带一个 `author` 字段：通过运维后台发布时，它是**发布者的账号 ID**（多管理员各用各的账号，见 [ADMIN.md](ADMIN.md) §1.1），玩家端在标题下方用小字显示；用 CLI 发布时没有发布者，`author` 为 `null`，不显示这一行。`update` 只改内容，不会改掉原发布者。
 
 支持标题、段落、粗体、斜体、列表、引用、分隔线、行内代码、围栏代码、安全链接和公告图片等常用 Markdown。原始 HTML 显示为文字；不是完整 Markdown 扩展实现，不支持任意网页或脚本。标题最多 120 个 Unicode 字符，正文最多 50,000 个 UTF-16 字符且不超过 128 KiB，最多保存 2,000 条公告。
 
@@ -98,7 +108,7 @@ Markdown 写法：
 
 图片通过本站 `/api/announcement-assets/` 地址只读提供，普通公告与紧急通知共用。仅支持 PNG、JPG/JPEG、GIF、WebP、AVIF 和 BMP；不支持外链、`public/assets` 图片、SVG、HTML 或本机磁盘路径。文件名与扩展名大小写在 Linux 上必须一致；文件名有空格时写成 `![说明](<assets/图片 1.png>)` 或将空格写成 `%20`。
 
-每篇最多显示 32 张图片，超出时显示已有的截断提示；每张文件不超过 16 MiB。图片按正文宽度等比缩放，滚动到附近才加载。更换图片建议使用新文件名；更新公告内容仍用新公告编号发布。Git 和发布包不会包含公告运行目录或这些图片，迁移和备份时复制完整公告目录（包含 `assets/`）。
+每篇最多显示 32 张图片，超出时显示已有的截断提示；每张文件不超过 16 MiB。图片按正文宽度等比缩放，滚动到附近才加载。更换图片建议使用新文件名；更新公告内容用 `update` 改同一条公告，或另发一条新编号。Git 和发布包不会包含公告运行目录或这些图片，迁移和备份时复制完整公告目录（包含 `assets/`）。
 
 ## 存储与部署
 

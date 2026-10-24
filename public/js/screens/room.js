@@ -1,6 +1,6 @@
 // Room screen (同盟等待室): configurable seat cards (avatar frame, name, ready state, AI badge, host crown),
 // host controls (difficulty picker, add/remove AI in co-op, start), invite code with copy code /
-// copy link, ready toggle and leave.
+// copy link, the OneBot 群招募 button (room.recruit, docs/ADMIN.md §4.4), ready toggle and leave.
 // The capacity branch keeps manual humans first within every fixed draft group (D004); the room shows it read-only.
 //
 // Start rule (server/lobby.js): room.start needs every *other* human connected and ready; the
@@ -211,7 +211,7 @@ function SpectatorBar({ facts, myId, busy, onRemove, onSit }) {
   </section>`;
 }
 
-function InviteBox({ code, name, difficulty }) {
+function InviteBox({ code, name, difficulty, recruit, recruitLeft, onRecruit }) {
   const copy = async (what) => {
     // the copied link carries an invitation line (#103): 「{name}邀请你加入卫戍协议：盟约【{difficulty}】」
     const invite = t('{name}邀请你加入卫戍协议：盟约【{difficulty}】', { name: name ?? '', difficulty: DIFFICULTY_NAMES[difficulty] ? t(DIFFICULTY_NAMES[difficulty]) : '' });
@@ -225,6 +225,10 @@ function InviteBox({ code, name, difficulty }) {
     <div class="invite__btns">
       <${Button} size="sm" icon="copy" onClick=${() => copy('code')}>${t('复制密钥')}<//>
       <${Button} size="sm" icon="link" onClick=${() => copy('link')}>${t('复制链接')}<//>
+      ${recruit ? html`<${Tooltip} text=${recruitLeft > 0 ? t('招募冷却中') : t('向服务器的 QQ 群发送本房间的招募信息')}>
+        <${Button} class="invite__recruit" block=${true} size="sm" icon="signal" disabled=${recruitLeft > 0} onClick=${onRecruit}>
+          ${recruitLeft > 0 ? t('招募 {sec}s', { sec: recruitLeft }) : t('招募')}<//>
+      <//>` : null}
     </div>
   </div>`;
 }
@@ -325,6 +329,20 @@ export function RoomScreen() {
   });
   const setDifficulty = (difficulty) => run('diff', () => net.request('room.setDifficulty', { difficulty }));
   const setCapacity = (capacity) => run('capacity', () => net.request('room.setCapacity', { capacity }));
+  // OneBot 群招募 (docs/ADMIN.md §4.4): offered when room.state carries `recruit` — the server has a configured OneBot
+  // target. The countdown is cosmetic (the server holds the real per-room cooldown): one local tick per second until
+  // the button comes back.
+  const [recruitLeft, setRecruitLeft] = useState(0);
+  useEffect(() => {
+    if (recruitLeft <= 0) return undefined;
+    const timer = setTimeout(() => setRecruitLeft((v) => Math.max(0, v - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [recruitLeft]);
+  const recruit = () => run('recruit', async () => {
+    await net.request('room.recruit', {});
+    setRecruitLeft(room.recruit?.cooldownSec || 0);
+    toast(t('招募信息已发送'), 'success');
+  });
   // spectator seats: the host frees one; a spectator takes a free player seat with room.join of this room
   const removeSpectator = (playerId) => run(`rs${playerId}`, () => net.request('room.removeSpectator', { playerId }));
   const sit = () => run('sit', () => net.request('room.join', { code: room.code, ...(room.test ? { testAck: true } : {}) }));
@@ -387,7 +405,8 @@ export function RoomScreen() {
         <${PluginTag} room=${room} myId=${me.playerId} />
       </div>
       <div class="topbar__right">
-        ${coop ? html`<${InviteBox} code=${room.code} name=${me.name} difficulty=${room.difficulty} />` : html`<div class="solo-note"><${MicroLabel}>SINGLE OPERATOR<//><span>${t('仅限 1 名博士')}</span></div>`}
+        ${coop ? html`<${InviteBox} code=${room.code} name=${me.name} difficulty=${room.difficulty}
+            recruit=${room.recruit} recruitLeft=${recruitLeft} onRecruit=${recruit} />` : html`<div class="solo-note"><${MicroLabel}>SINGLE OPERATOR<//><span>${t('仅限 1 名博士')}</span></div>`}
         <${LobbyChatHost} room=${room} myId=${me.playerId} />
       </div>
     </header>

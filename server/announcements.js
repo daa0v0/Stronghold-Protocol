@@ -2,6 +2,8 @@
 // runtime/announcements/index.json + <id>.md by default; SP_ANNOUNCEMENTS_DIR can name persistent storage.
 // The small index is checked on every request. Bodies are read on demand and verified against their index hash.
 // Publishing commits the body first, then atomically replaces the index; readers never see a half-written index.
+// A publication is permanent (an id is never reused), but its title and body can be CORRECTED with update(): the
+// revision moves, clients refetch, and the publishing operator recorded in `author` stays the one who published.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { TextDecoder } from 'node:util';
 import {
   ANNOUNCEMENT_INDEX_FILE, ANNOUNCEMENT_MAX_TITLE_LENGTH, ANNOUNCEMENT_MAX_BODY_CHARS, ANNOUNCEMENT_MAX_BODY_BYTES,
-  ANNOUNCEMENT_MAX_INDEX_BYTES, ANNOUNCEMENT_MAX_ITEMS, isAnnouncementId, isAnnouncementTitle, isAnnouncementPublishedAt, readAnnouncementIndex,
+  ANNOUNCEMENT_MAX_INDEX_BYTES, ANNOUNCEMENT_MAX_ITEMS, isAnnouncementId, isAnnouncementTitle, isAnnouncementPublishedAt,
+  isAnnouncementAuthor, readAnnouncementIndex,
 } from '../shared/announcements.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -18,7 +21,7 @@ const INDEX_VERSION = 1;
 const LOCK_FILE = '.write.lock';
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const emptyIndex = () => ({ version: INDEX_VERSION, revision: '', pinnedId: null, items: [] });
-const metadataOf = ({ id, title, publishedAt, revision }) => ({ id, title, publishedAt, revision });
+const metadataOf = ({ id, title, publishedAt, revision, author }) => ({ id, title, publishedAt, revision, author: isAnnouncementAuthor(author) && typeof author === 'string' ? author : null });
 const hashOf = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 /** Explicit option, environment, then <root>/runtime/announcements. Relative paths resolve from root. */
@@ -183,7 +186,7 @@ export class AnnouncementStore {
   }
 
   /** Each publication is immutable and obtains a new persistent revision. Pinning is optional. */
-  publish({ id, title, markdown, publishedAt = new Date().toISOString(), pin = false }) {
+  publish({ id, title, markdown, publishedAt = new Date().toISOString(), pin = false, author = null }) {
     if (id === undefined) id = `ann-${Date.now().toString(36)}-${randomUUID().slice(0, 12)}`;
     if (!isAnnouncementId(id)) throw new Error('公告 ID 只能使用小写字母、数字、下划线和连字符，长度 1–64，且不能使用设备名');
     if (typeof title === 'string') title = title.trim();
@@ -192,22 +195,55 @@ export class AnnouncementStore {
     if (typeof publishedAt !== 'string' || !Number.isFinite(date.getTime())) throw new Error('公告发布时间无效');
     publishedAt = date.toISOString();
     if (!isAnnouncementPublishedAt(publishedAt)) throw new Error('公告发布时间须使用 0000–9999 年范围');
+    if (author !== null && author !== undefined && !isAnnouncementAuthor(author)) throw new Error('公告发布者 ID 无效');
     const { bytes } = normalizeMarkdown(markdown);
     return this.mutate((state) => {
       if (state.items.length >= ANNOUNCEMENT_MAX_ITEMS) throw new Error(`公告历史已达到 ${ANNOUNCEMENT_MAX_ITEMS} 条限制`);
-      if (state.items.some((item) => item.id === id)) throw new Error(`公告 ID ${id} 已存在；发布新内容请使用新 ID`);
+      if (state.items.some((item) => item.id === id)) throw new Error(`公告 ID ${id} 已存在；发布新内容请使用新 ID，修改已发布内容请使用 update`);
       const file = path.join(this.dir, `${id}.md`);
       try {
         fs.lstatSync(file);
         throw new Error(`公告正文 ${id}.md 已存在，未覆盖`);
       } catch (e) { if (e.code !== 'ENOENT') throw e; }
-      const item = { id, title, publishedAt, revision: `pub-${Date.now().toString(36)}-${randomUUID()}`, bytes: bytes.length, sha256: hashOf(bytes) };
+      const item = { id, title, publishedAt, revision: `pub-${Date.now().toString(36)}-${randomUUID()}`, bytes: bytes.length, sha256: hashOf(bytes), author: typeof author === 'string' ? author : null };
       const next = { version: INDEX_VERSION, revision: item.revision, pinnedId: pin ? id : state.pinnedId, items: [item, ...state.items] };
       // Commit the body before making it visible. If index replacement fails, this unpublished body can be retried
       // after removing it; retaining it is safer than masking a filesystem failure with a second write.
       atomicWrite(file, bytes);
       this.writeIndex(next);
       return metadataOf(item);
+    });
+  }
+
+  /**
+   * Correct an ALREADY published announcement: the id, its position in the history and its publication date survive,
+   * only the title and the Markdown change. The revision moves to a new `upd-…` value, so clients that cached the old
+   * body fetch the corrected one — and, when this was the newest publication, the "new announcement" reminder fires
+   * again (index.revision follows items[0].revision). The publishing operator is recorded; editing does not re-stamp
+   * the original author.
+   * @param {string} id @param {{ title?: string, markdown: string, author?: string|null }} input
+   */
+  update(id, { title, markdown, author }) {
+    if (!isAnnouncementId(id)) throw new Error('公告 ID 无效');
+    if (typeof title === 'string') title = title.trim();
+    if (!isAnnouncementTitle(title)) throw new Error(`公告标题不能为空、包含控制字符或超过 ${ANNOUNCEMENT_MAX_TITLE_LENGTH} 字符`);
+    if (author !== null && author !== undefined && !isAnnouncementAuthor(author)) throw new Error('公告发布者 ID 无效');
+    const { bytes } = normalizeMarkdown(markdown);
+    return this.mutate((state) => {
+      const item = state.items.find((entry) => entry.id === id);
+      if (!item) throw new Error(`找不到公告 ${id}`);
+      const updated = { ...item, title, revision: `upd-${Date.now().toString(36)}-${randomUUID()}`, bytes: bytes.length, sha256: hashOf(bytes) };
+      if (typeof author === 'string' && !item.author) updated.author = author; // a CLI publication with no operator keeps none
+      const next = {
+        ...state,
+        // Only the newest publication's revision is the catalog revision: correcting an older entry keeps the
+        // "already seen" suppression of the current one, while a correction of the headline entry re-notifies players.
+        revision: state.items[0].id === id ? updated.revision : state.revision,
+        items: state.items.map((entry) => (entry.id === id ? updated : entry)),
+      };
+      atomicWrite(path.join(this.dir, `${id}.md`), bytes);
+      this.writeIndex(next);
+      return metadataOf(updated);
     });
   }
 

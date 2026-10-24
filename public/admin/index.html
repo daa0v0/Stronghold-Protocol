@@ -21,6 +21,7 @@
       <span id="badge-app" class="badge">v—</span>
       <span id="badge-build" class="badge badge--dim">build —</span>
       <span id="badge-state" class="badge badge--dim">未连接</span>
+      <span id="badge-who" class="badge badge--dim" hidden></span>
       <button id="btn-logout" class="btn btn--ghost" hidden>退出登录</button>
     </div>
   </header>
@@ -39,9 +40,10 @@
 
   <section id="screen-login" class="screen" hidden>
     <h2>管理员验证</h2>
-    <p class="dim">输入服务器配置的 <code>ADMIN_SECRET</code>。</p>
+    <p class="dim">管理员账号登录（多位运维各用各的账号，公告会记录发布者）；也可以输入服务器配置的 <code>ADMIN_SECRET</code> 以主密钥身份进入。</p>
     <form id="login-form" autocomplete="off">
-      <input id="login-secret" type="password" placeholder="管理员密钥" required autocomplete="current-password" />
+      <input id="login-id" type="text" placeholder="管理员账号 ID（主密钥登录可留空）" autocomplete="username" />
+      <input id="login-secret" type="password" placeholder="密码 / 管理员密钥" required autocomplete="current-password" />
       <button class="btn btn--primary" type="submit">进入控制台</button>
       <p id="login-error" class="error" hidden></p>
     </form>
@@ -123,10 +125,10 @@
       <h2>公告 <span id="ann-count" class="badge badge--dim">0</span>
         <span id="ann-pinned" class="badge badge--dim" hidden>已置顶</span>
       </h2>
-      <p class="dim">发布即刻生效，玩家进站自动看到；已发布的公告不可修改，改正文请用新 ID 重发。</p>
+      <p class="dim">发布即刻生效，玩家进站自动看到；公告的作者 ID 会显示在标题下方。已发布的公告可以「修改」标题与正文（编号、发布时间和历史位置不变）。</p>
 
-      <details class="subpanel">
-        <summary>发布新公告</summary>
+      <details class="subpanel" id="ann-form-panel">
+        <summary id="ann-form-summary">发布新公告</summary>
         <div class="ann-form">
           <label>ID（留空自动生成；只能用小写字母、数字、下划线、连字符）
             <input id="ann-id" type="text" maxlength="64" placeholder="welcome" />
@@ -149,12 +151,91 @@
       <div class="tablewrap">
         <table id="announcements">
           <thead>
-            <tr><th>ID</th><th>标题</th><th>发布时间</th><th>状态</th><th></th></tr>
+            <tr><th>ID</th><th>标题</th><th>发布者</th><th>发布时间</th><th>状态</th><th></th></tr>
           </thead>
           <tbody id="ann-body-list"></tbody>
         </table>
       </div>
       <p id="ann-empty" class="dim">还没有发布过公告。</p>
+    </section>
+
+    <!-- OneBot 群招募 -->
+    <section class="panel" id="onebot-panel">
+      <h2>OneBot 群招募 <span id="ob-badge" class="badge badge--dim">未连接</span></h2>
+      <p class="dim">房间内的「招募」按钮会把模板填上房间信息，经 OneBot 11 发到目标 QQ 群。连接方式二选一：<strong>正向</strong>（本服作客户端，连接 OneBot 实现开放的 ws 地址，适合 OneBot 和游戏服在同一台机器/内网）或<strong>反向</strong>（OneBot 实现作为客户端连入本服的 <code id="ob-path">/onebot/ws</code>，适合 OneBot 所在机器没有公网）。</p>
+      <div class="ann-form">
+        <label class="chk"><input type="checkbox" id="ob-enabled" /> 启用群招募（满足条件的房间显示「招募」按钮）</label>
+        <label>连接方式
+          <select id="ob-mode">
+            <option value="client">正向 WS · 本服作为客户端连接 OneBot</option>
+            <option value="server">反向 WS · OneBot 连入本服 /onebot/ws</option>
+          </select>
+        </label>
+        <label id="ob-url-row">OneBot 正向 WS 地址（ws:// 或 wss://）
+          <input id="ob-url" type="text" maxlength="200" placeholder="ws://127.0.0.1:3001" />
+        </label>
+        <p class="dim" id="ob-server-hint" hidden>反向模式：在 OneBot 实现里添加「反向 WebSocket 连接」，地址填
+          <code id="ob-server-url">ws://本服地址:端口/onebot/ws</code>（本页面所在的地址就是它，直接复制下面这段即可），Token 与下方一致。启用前必须设置 Token——这条通道暴露在本服端口上，没有 Token 时一律拒绝连接。</p>
+        <label>Access Token（<span id="ob-token-hint">未设置</span>；留空表示不修改）
+          <input id="ob-token" type="password" maxlength="128" placeholder="留空保持不变" />
+        </label>
+        <label>目标群号（每行或逗号分隔一个，最多 10 个）
+          <textarea id="ob-groups" rows="2" placeholder="123456789&#10;987654321"></textarea>
+        </label>
+        <label>招募信息模板（最多 600 字；占位符 {room} 房间密钥、{host} 房主、{players} 当前真人、{capacity} 房间人数、{difficulty} 难度、{mode} 模式、{link} 点击加入的链接）
+          <textarea id="ob-template" rows="3"></textarea>
+        </label>
+        <label>招募链接基址（{link} 用它生成「<code>基址/?room=房间密钥</code>」的直接加入链接，QQ 里点击即进房；留空则 {link} 渲染为空。填玩家能打开的地址，如 <code>https://你的域名</code>）
+          <input id="ob-link-base" type="text" maxlength="200" placeholder="https://game.example.com" />
+        </label>
+        <label>招募冷却（秒，同一房间两次招募的最小间隔，0–3600）
+          <input id="ob-cooldown" type="number" min="0" max="3600" value="60" />
+        </label>
+        <div class="row">
+          <button id="btn-ob-save" class="btn btn--primary">保存并应用</button>
+          <button id="btn-ob-reconnect" class="btn btn--ghost">立即重连</button>
+          <button id="btn-ob-test" class="btn btn--warn">发送测试消息</button>
+          <button id="btn-ob-clear-token" class="btn btn--ghost">清除 Token</button>
+        </div>
+        <p id="ob-msg" class="dim"></p>
+        <pre id="ob-status" class="mono">—</pre>
+      </div>
+    </section>
+
+    <!-- 运维账号（仅主密钥） -->
+    <section class="panel" id="operators-panel" hidden>
+      <h2>运维账号 <span id="operators-count" class="badge badge--dim">0</span></h2>
+      <p class="dim">多位管理员各用各的账号登录后台；公告的作者栏会记录发布公告的账号 ID。仅主密钥（<code>ADMIN_SECRET</code>）可以管理账号。</p>
+
+      <details class="subpanel">
+        <summary>新建运维账号</summary>
+        <div class="ann-form">
+          <label>账号 ID（小写字母、数字、下划线、连字符，3–32 位；公告里显示的就是它）
+            <input id="op-id" type="text" maxlength="32" placeholder="alice" />
+          </label>
+          <label>显示名称（可留空，默认同 ID）
+            <input id="op-name" type="text" maxlength="40" placeholder="小爱" />
+          </label>
+          <label>密码（至少 8 位）
+            <input id="op-password" type="password" maxlength="128" placeholder="至少 8 位" />
+          </label>
+          <div class="row">
+            <button id="btn-op-create" class="btn btn--primary">创建账号</button>
+            <button id="btn-op-clear" class="btn btn--ghost">清空</button>
+          </div>
+          <p id="op-msg" class="dim"></p>
+        </div>
+      </details>
+
+      <div class="tablewrap">
+        <table id="operators">
+          <thead>
+            <tr><th>ID</th><th>名称</th><th>创建于</th><th>最近登录</th><th>状态</th><th></th></tr>
+          </thead>
+          <tbody id="operators-body"></tbody>
+        </table>
+      </div>
+      <p id="operators-empty" class="dim">还没有运维账号。用上面的表单创建一个，之后就能用「账号 + 密码」登录了。</p>
     </section>
 
     <!-- 账号 -->
@@ -199,7 +280,7 @@
     </section>
 
     <footer class="foot dim">
-      只读监控 + 运维动作（广播 / 维护模式 / 关闭房间）+ 公告管理（发布 / 置顶 / 通知）+ 账号管理（重置密码 / 封禁 / 删除）。
+      只读监控 + 运维动作（广播 / 维护模式 / 关闭房间）+ 公告管理（发布 / 修改 / 置顶 / 通知）+ OneBot 群招募配置 + 运维账号管理（仅主密钥）。
       服务器设置由 CLI 写入，见 <code>docs/ADMIN.md</code>。
     </footer>
   </main>
